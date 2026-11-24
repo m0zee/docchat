@@ -1,0 +1,18 @@
+# Phase 6 tasks: workspaces, API keys and the public API
+
+Branch `phase-6` from `main`, draft PR into `main`. One commit per task. `composer ci:check` must pass after every task. Every external API is faked in tests. Design notes: [TENANCY_REVIEW.md](TENANCY_REVIEW.md).
+
+- [ ] **P6-1 Workspaces schema.** Migrations for `workspaces` (name, slug unique, settings jsonb) and `workspace_user` (role owner/member, unique pair), `users.current_workspace_id`. Models `Workspace` (members, owners, documents, conversations), enum `WorkspaceRole`, factory. `User::workspaces()`, `currentWorkspace()`, `switchWorkspace()`. Registration and the sample seeder create a personal workspace. Tests.
+- [ ] **P6-2 workspace_id on data.** Add `workspace_id` to documents, chunks, conversations, messages; make `user_id` nullable (null on delete). Backfill one workspace per existing user inside the migration. Indexes. Tests for the backfill.
+- [ ] **P6-3 Scoping.** `CurrentWorkspace` service, `BelongsToWorkspace` trait (global scope when a workspace is set, fills `workspace_id` on create), web middleware. Move Retriever, AnswerService, DocumentService, IngestDocumentJob, EvalRunner and `docchat:eval` (`--workspace`) to workspaces. Chunks inherit `workspace_id`. Policies by membership and role. Update factories and existing tests.
+- [ ] **P6-4 Workspace switcher.** Sidebar switcher, create workspace, rename (owner). Dashboard shows the current workspace. Web isolation tests: a member of A gets 403/404 on B's documents, chats and citations.
+- [ ] **P6-5 Document sources.** `source` enum, `external_id`, `meta` jsonb, `content_hash`, unique (workspace_id, source, external_id). Re-upload with the same external_id replaces the file and re-ingests with the same id; same hash skips embedding. Tests.
+- [ ] **P6-6 Conversation channels.** `channel` enum and `external_id`, unique (workspace_id, channel, external_id). `Conversation::forChannel()` finds or creates. Tests.
+- [ ] **P6-7 API keys.** `api_keys` table and model, `dc_live_` keys (prefix + SHA-256 hash), abilities, allowed_origins, rate_limit_per_minute, last_used_at, revoked_at. Settings page: create (shown once), list, revoke. API middleware: bearer auth, ability check, per-key RateLimiter with 429 + Retry-After. Consistent JSON error format. Tests.
+- [ ] **P6-8 Usage events.** `usage_events` table, recorded by AnswerService (question) and IngestDocumentJob (ingest, embedding token estimate). Monthly usage page with totals per channel. Tests.
+- [ ] **P6-9 Documents API.** `POST/GET /api/v1/documents`, `GET/DELETE /api/v1/documents/{id}`, filters `source` and `external_id`, API resources. Tests incl. cross-workspace isolation.
+- [ ] **P6-10 Ask API and formats.** `POST /api/v1/ask` (question, document_ids, channel, external_conversation_id, format) returning answer, citations, conversation_id, usage. `MessageFormatter` for plain, markdown, telegram_html, whatsapp with channel-safe splitting. Tests.
+- [ ] **P6-11 SSE stream.** `GET|POST /api/v1/ask/stream` with `token` events and a final `done` event (citations, usage, conversation_id) and an `error` event. Tests for the stream shape.
+- [ ] **P6-12 Outgoing webhooks.** `webhooks` table, settings page, `SendWebhookJob` with backoff, `X-DocChat-Signature: sha256=<hmac>` and `X-DocChat-Timestamp`, payload with meta. Fired on document.ready / document.failed. Receiver-side replay check documented. Tests for signing and retries.
+- [ ] **P6-13 API docs.** `dedoc/scramble` at `/docs/api`, with examples on requests and responses. Test that the page and spec render.
+- [ ] **P6-14 Docs and handoff.** README: architecture diagram (Laravel core + n8n + channels), API quick start, security notes. Handoff file.
