@@ -11,6 +11,7 @@ use App\Services\Cache\AnswerCache;
 use App\Services\Ingestion\Chunker;
 use App\Services\Ingestion\DocumentParser;
 use App\Services\Usage\UsageRecorder;
+use App\Services\Webhooks\WebhookDispatcher;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -75,6 +76,7 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
             if ($this->unchanged($document, $hash)) {
                 // Same bytes, same embedding model: the chunks are still valid.
                 $document->update(['status' => DocumentStatus::Ready, 'error' => null]);
+                app(WebhookDispatcher::class)->document($document, 'document.ready');
 
                 return;
             }
@@ -124,6 +126,7 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
             });
 
             AnswerCache::invalidate($document->workspace_id);
+            app(WebhookDispatcher::class)->document($document->refresh(), 'document.ready');
 
             $usage->ingest(
                 $document,
@@ -182,5 +185,7 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
             'status' => DocumentStatus::Failed,
             'error' => Str::limit($message, 500),
         ]);
+
+        app(WebhookDispatcher::class)->document($document, 'document.failed');
     }
 }
