@@ -8,6 +8,8 @@ return [
         'base_url' => env('DOCCHAT_EMBEDDING_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
         'api_key' => env('GEMINI_API_KEY'),
         'batch_size' => (int) env('DOCCHAT_EMBEDDING_BATCH_SIZE', 50),
+        'max_retries' => (int) env('DOCCHAT_EMBEDDING_MAX_RETRIES', 5),
+        'retry_base_ms' => (int) env('DOCCHAT_EMBEDDING_RETRY_BASE_MS', 1000),
         'task_prefixes' => [
             'query' => env('DOCCHAT_EMBEDDING_QUERY_PREFIX', 'task: search result | query: '),
             'document' => env('DOCCHAT_EMBEDDING_DOCUMENT_PREFIX', 'title: {title} | text: '),
