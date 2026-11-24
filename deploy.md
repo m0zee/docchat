@@ -108,6 +108,15 @@ docker compose -f docker-compose.prod.yml exec app php artisan docchat:eval eval
 docker compose -f docker-compose.prod.yml exec app php artisan docchat:eval evals/sample.json --sweep=0.3,0.4,0.5,0.6
 ```
 
+### Sending real email (optional, free)
+
+By default emails (workspace invites, verification, password reset) are written to the log, and owners can copy an invite link from the Members page and send it themselves. To actually send email, pick a free SMTP option and set the `MAIL_*` lines in `.env`:
+
+- **Gmail:** turn on 2-step verification, create an [app password](https://myaccount.google.com/apppasswords), then `MAIL_MAILER=smtp`, `MAIL_HOST=smtp.gmail.com`, `MAIL_PORT=587`, `MAIL_USERNAME` = your address, `MAIL_PASSWORD` = the app password, `MAIL_FROM_ADDRESS` = the same address. Gmail limits how much you can send per day, which is plenty for a demo.
+- **A transactional email service's free tier** (for example Brevo or Mailjet; check their current free limits). They give you SMTP host, port, user and password to paste in the same way.
+
+Then `docker compose -f docker-compose.prod.yml up -d` to restart with the new settings. Invite emails go through the queue, so the worker must be running.
+
 ## 7. Day-to-day
 
 | Task | Command |

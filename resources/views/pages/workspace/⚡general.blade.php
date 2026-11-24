@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\WorkspaceRole;
 use App\Models\Workspace;
 use App\Support\CurrentWorkspace;
 use Flux\Flux;
@@ -27,6 +28,29 @@ new #[Title('Workspace')] class extends Component {
         Flux::toast(variant: 'success', text: __('Workspace renamed.'));
     }
 
+    public function leave(): void
+    {
+        $user = auth()->user();
+        $workspace = $this->workspace;
+
+        $owners = $workspace->members()->wherePivot('role', WorkspaceRole::Owner->value)->count();
+
+        if ($workspace->isOwner($user) && $owners <= 1) {
+            Flux::toast(variant: 'danger', text: __('Make someone else an owner before you leave.'));
+
+            return;
+        }
+
+        $workspace->members()->detach($user->id);
+
+        if ($user->workspaces()->doesntExist()) {
+            Workspace::createFor($user);
+        }
+
+        app(CurrentWorkspace::class)->forget();
+        $this->redirectRoute('dashboard', navigate: true);
+    }
+
     #[Computed]
     public function workspace(): Workspace
     {
@@ -50,4 +74,12 @@ new #[Title('Workspace')] class extends Component {
             <flux:button variant="primary" type="submit">{{ __('Save') }}</flux:button>
         @endif
     </form>
+
+    <flux:separator class="my-8" />
+
+    <div class="space-y-3">
+        <flux:heading>{{ __('Leave workspace') }}</flux:heading>
+        <flux:text>{{ __('You lose access to its documents and your chats in it.') }}</flux:text>
+        <flux:button variant="danger" wire:click="leave" wire:confirm="{{ __('Leave :name?', ['name' => $this->workspace->name]) }}">{{ __('Leave') }}</flux:button>
+    </div>
 </x-pages::workspace.layout>
