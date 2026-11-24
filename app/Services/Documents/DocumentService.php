@@ -34,7 +34,6 @@ class DocumentService
             'mime' => (string) $file->getMimeType(),
             'size_bytes' => (int) $file->getSize(),
             'status' => DocumentStatus::Pending,
-            'embedding_model' => (string) config('docchat.embedding.model'),
         ]);
 
         IngestDocumentJob::dispatch($document);

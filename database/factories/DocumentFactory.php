@@ -29,7 +29,7 @@ class DocumentFactory extends Factory
             'page_count' => fake()->numberBetween(1, 5),
             'status' => DocumentStatus::Pending,
             'error' => null,
-            'embedding_model' => config('docchat.embedding.model'),
+            'embedding_model' => null,
         ];
     }
 
@@ -44,6 +44,7 @@ class DocumentFactory extends Factory
     {
         return $this->state(fn () => [
             'status' => DocumentStatus::Ready,
+            'embedding_model' => config('docchat.embedding.model'),
         ]);
     }
 

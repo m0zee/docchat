@@ -28,6 +28,7 @@ it('accepts a supported file, stores it privately and queues ingestion', functio
     expect($document)->not->toBeNull()
         ->and($document->user_id)->toBe($user->id)
         ->and($document->status->value)->toBe('pending')
+        ->and($document->embedding_model)->toBeNull()
         ->and($document->title)->toBe(pathinfo($name, PATHINFO_FILENAME))
         ->and($document->original_filename)->toBe($name)
         ->and($document->size_bytes)->toBeGreaterThan(0)
