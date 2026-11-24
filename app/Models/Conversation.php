@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ConversationChannel;
 use App\Models\Concerns\BelongsToWorkspace;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -10,21 +11,70 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use RuntimeException;
 
 /**
  * @property int $id
  * @property int|null $user_id
+ * @property ConversationChannel $channel
+ * @property string|null $external_id
  * @property string|null $title
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read User|null $user
  */
-#[Fillable(['workspace_id', 'user_id', 'title'])]
+#[Fillable(['workspace_id', 'user_id', 'channel', 'external_id', 'title'])]
 class Conversation extends Model
 {
     /** @use HasFactory<ConversationFactory> */
     use BelongsToWorkspace, HasFactory;
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'channel' => ConversationChannel::class,
+        ];
+    }
+
+    /**
+     * The conversation for a channel's external id (a Telegram chat, a widget
+     * visitor), created on first use. Without an external id a new one is
+     * always started.
+     */
+    public static function forChannel(
+        Workspace $workspace,
+        ConversationChannel $channel,
+        ?string $externalId = null,
+        ?User $user = null,
+    ): self {
+        $externalId = $externalId === null || trim($externalId) === '' ? null : mb_substr(trim($externalId), 0, 255);
+
+        $attributes = [
+            'workspace_id' => $workspace->id,
+            'channel' => $channel,
+            'user_id' => $user?->id,
+        ];
+
+        if ($externalId === null) {
+            return self::query()->create($attributes);
+        }
+
+        $find = fn (): ?self => self::query()->inWorkspace($workspace)
+            ->where('channel', $channel->value)
+            ->where('external_id', $externalId)
+            ->first();
+
+        try {
+            return $find() ?? self::query()->create($attributes + ['external_id' => $externalId]);
+        } catch (UniqueConstraintViolationException) {
+            return $find() ?? throw new RuntimeException('Conversation could not be created.');
+        }
+    }
 
     /**
      * @return BelongsTo<User, $this>

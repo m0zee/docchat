@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\DocumentStatus;
+use App\Enums\ConversationChannel;
 use App\Enums\MessageRole;
 use App\Models\Chunk;
 use App\Models\Conversation;
@@ -204,7 +205,7 @@ new #[Title('Chat')] class extends Component {
 
     private function startConversation(): Conversation
     {
-        $conversation = $this->workspace()->conversations()->create(['user_id' => $this->user()->id]);
+        $conversation = Conversation::forChannel($this->workspace(), ConversationChannel::Web, user: $this->user());
         $conversation->documents()->sync($this->allowedDocumentIds($this->documentIds));
 
         $this->conversationId = $conversation->id;
@@ -246,6 +247,7 @@ new #[Title('Chat')] class extends Component {
     {
         return Conversation::query()
             ->inWorkspace($this->workspace())
+            ->where('channel', ConversationChannel::Web->value)
             ->where('user_id', $this->user()->id);
     }
 

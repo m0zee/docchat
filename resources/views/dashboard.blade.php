@@ -1,7 +1,7 @@
 @php
     $user = auth()->user();
     $workspace = app(\App\Support\CurrentWorkspace::class)->require();
-    $myConversations = \App\Models\Conversation::query()->inWorkspace($workspace)->where('user_id', $user->id);
+    $myConversations = \App\Models\Conversation::query()->inWorkspace($workspace)->where('channel', 'web')->where('user_id', $user->id);
     $stats = [
         ['label' => __('Ready documents'), 'value' => \App\Models\Document::query()->inWorkspace($workspace)->where('status', \App\Enums\DocumentStatus::Ready)->count(), 'icon' => 'document-text'],
         ['label' => __('Chunks indexed'), 'value' => \App\Models\Chunk::query()->inWorkspace($workspace)->count(), 'icon' => 'squares-2x2'],

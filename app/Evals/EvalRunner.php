@@ -3,6 +3,7 @@
 namespace App\Evals;
 
 use App\Contracts\EmbeddingProvider;
+use App\Enums\ConversationChannel;
 use App\Models\Workspace;
 use App\Services\Rag\AnswerService;
 use App\Services\Rag\PromptBuilder;
@@ -41,7 +42,7 @@ class EvalRunner
                 Sleep::for((int) round($delaySeconds * 1000))->milliseconds();
             }
 
-            $conversation = $workspace->conversations()->create(['title' => 'eval: '.Str::limit($case->question, 60)]);
+            $conversation = $workspace->conversations()->create(['channel' => ConversationChannel::Eval, 'title' => 'eval: '.Str::limit($case->question, 60)]);
 
             if ($documentIds !== null) {
                 $conversation->documents()->sync($documentIds);
