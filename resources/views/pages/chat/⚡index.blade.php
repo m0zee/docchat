@@ -100,6 +100,40 @@ new #[Title('Chat')] class extends Component {
         unset($this->messages, $this->conversations);
     }
 
+    public function rename(string $title): void
+    {
+        $conversation = $this->conversation;
+
+        if ($conversation === null) {
+            return;
+        }
+
+        Gate::authorize('update', $conversation);
+
+        $title = trim($title);
+
+        if ($title !== '') {
+            $conversation->update(['title' => mb_substr($title, 0, 80)]);
+        }
+
+        unset($this->conversation, $this->conversations);
+    }
+
+    public function deleteConversation(): void
+    {
+        $conversation = $this->conversation;
+
+        if ($conversation === null) {
+            return;
+        }
+
+        Gate::authorize('delete', $conversation);
+
+        $conversation->delete();
+
+        $this->redirectRoute('chat.index', navigate: true);
+    }
+
     public function updatedDocumentIds(): void
     {
         $this->documentIds = $this->allowedDocumentIds($this->documentIds);
@@ -245,7 +279,24 @@ new #[Title('Chat')] class extends Component {
             </div>
         @else
             <div class="flex flex-wrap items-center gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-700">
-                <flux:heading size="lg" class="truncate">{{ $this->conversation?->title ?? __('New chat') }}</flux:heading>
+                <div class="flex min-w-0 items-center gap-1" x-data="{ editing: false, title: @js($this->conversation?->title ?? '') }">
+                    <flux:heading size="lg" class="truncate" x-show="! editing">{{ $this->conversation?->title ?? __('New chat') }}</flux:heading>
+
+                    @if ($this->conversation)
+                        <form x-show="editing" x-cloak x-on:submit.prevent="$wire.rename(title); editing = false" class="flex items-center gap-2">
+                            <flux:input size="sm" x-model="title" maxlength="80" x-ref="title" />
+                            <flux:button size="sm" type="submit">{{ __('Save') }}</flux:button>
+                        </form>
+
+                        <flux:dropdown x-show="! editing">
+                            <flux:button size="sm" variant="ghost" icon="ellipsis-horizontal" :aria-label="__('Conversation options')" />
+                            <flux:menu>
+                                <flux:menu.item icon="pencil" x-on:click="editing = true; $nextTick(() => $refs.title.querySelector('input')?.focus())">{{ __('Rename') }}</flux:menu.item>
+                                <flux:menu.item icon="trash" variant="danger" wire:click="deleteConversation" wire:confirm="{{ __('Delete this conversation and its messages?') }}">{{ __('Delete') }}</flux:menu.item>
+                            </flux:menu>
+                        </flux:dropdown>
+                    @endif
+                </div>
                 <flux:spacer />
                 <flux:dropdown position="bottom" align="end">
                     <flux:button size="sm" icon="funnel" icon:trailing="chevron-down" data-scope-button>
