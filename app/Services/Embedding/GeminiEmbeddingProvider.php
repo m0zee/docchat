@@ -10,6 +10,8 @@ use Illuminate\Support\Sleep;
 
 class GeminiEmbeddingProvider implements EmbeddingProvider
 {
+    public const MAX_RETRY_DELAY_MS = 60_000;
+
     public function embedDocuments(array $texts, string $title = ''): array
     {
         $prefix = str_replace(
@@ -40,13 +42,13 @@ class GeminiEmbeddingProvider implements EmbeddingProvider
         $apiKey = (string) config('docchat.embedding.api_key');
 
         if ($apiKey === '') {
-            throw new EmbeddingException('Set GEMINI_API_KEY in .env.');
+            throw EmbeddingException::permanent('Set GEMINI_API_KEY in .env.');
         }
 
         $model = trim((string) config('docchat.embedding.model'));
 
         if ($model === '') {
-            throw new EmbeddingException('Set DOCCHAT_EMBEDDING_MODEL in .env.');
+            throw EmbeddingException::permanent('Set DOCCHAT_EMBEDDING_MODEL in .env.');
         }
 
         $modelId = str_starts_with($model, 'models/') ? substr($model, 7) : $model;
@@ -68,14 +70,14 @@ class GeminiEmbeddingProvider implements EmbeddingProvider
             $embeddings = $response->json('embeddings');
 
             if (! is_array($embeddings) || count($embeddings) !== count($batch)) {
-                throw new EmbeddingException('Gemini returned an unexpected number of embeddings.');
+                throw EmbeddingException::permanent('Gemini returned an unexpected number of embeddings.');
             }
 
             foreach ($embeddings as $embedding) {
                 $values = is_array($embedding) ? ($embedding['values'] ?? null) : null;
 
                 if (! is_array($values) || count($values) !== $dimensions) {
-                    throw new EmbeddingException('Gemini returned an embedding with unexpected dimensions.');
+                    throw EmbeddingException::permanent('Gemini returned an embedding with unexpected dimensions.');
                 }
 
                 $vectors[] = array_map(floatval(...), $values);
@@ -107,13 +109,19 @@ class GeminiEmbeddingProvider implements EmbeddingProvider
             $retryable = $status === 429 || $status >= 500;
 
             if (! $retryable || $attempt === $maxAttempts) {
-                throw new EmbeddingException('Gemini request failed with status '.$status.'.');
+                throw new EmbeddingException(
+                    'Gemini request failed with status '.$status.'.',
+                    retryable: $retryable,
+                );
             }
 
             $retryAfter = $response->header('Retry-After');
             $delay = is_numeric($retryAfter)
                 ? max(0, (int) $retryAfter * 1000)
                 : $baseDelay * (2 ** ($attempt - 1)) + random_int(0, 250);
+
+            // Never wait longer than the job could afford before its timeout.
+            $delay = min($delay, self::MAX_RETRY_DELAY_MS);
 
             Sleep::for($delay)->milliseconds();
         }

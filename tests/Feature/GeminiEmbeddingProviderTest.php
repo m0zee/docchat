@@ -140,3 +140,37 @@ it('binds the configured embedding driver', function () {
     expect(fn () => app(EmbeddingProvider::class))
         ->toThrow(InvalidArgumentException::class);
 });
+
+it('caps a long Retry-After delay at 60 seconds', function () {
+    Http::fakeSequence()
+        ->push(['error' => ['message' => 'rate limited']], 429, ['Retry-After' => '3600'])
+        ->push(['embeddings' => [['values' => array_fill(0, 1536, 0.1)]]], 200);
+
+    (new GeminiEmbeddingProvider)->embedDocuments(['chunk'], 'Doc');
+
+    Sleep::assertSequence([Sleep::for(60_000)->milliseconds()]);
+});
+
+it('marks client errors as permanent and rate limits as retryable', function () {
+    config(['docchat.embedding.max_retries' => 1]);
+
+    Http::fakeSequence()
+        ->push(['error' => ['message' => 'bad key']], 403)
+        ->push(['error' => ['message' => 'rate limited']], 429);
+
+    $provider = new GeminiEmbeddingProvider;
+
+    try {
+        $provider->embedDocuments(['chunk'], 'Doc');
+    } catch (EmbeddingException $exception) {
+        expect($exception->retryable)->toBeFalse();
+    }
+
+    try {
+        $provider->embedDocuments(['chunk'], 'Doc');
+    } catch (EmbeddingException $exception) {
+        expect($exception->retryable)->toBeTrue();
+    }
+
+    Http::assertSentCount(2);
+});

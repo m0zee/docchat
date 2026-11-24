@@ -2,7 +2,6 @@
 
 use App\Contracts\EmbeddingProvider;
 use App\Enums\DocumentStatus;
-use App\Exceptions\DocumentParsingException;
 use App\Exceptions\EmbeddingException;
 use App\Jobs\IngestDocumentJob;
 use App\Models\Document;
@@ -116,26 +115,71 @@ it('does not duplicate chunks when the job runs twice', function () {
     expect($document->refresh()->chunks()->count())->toBe(3);
 });
 
-it('marks the document failed when the embedding provider fails', function () {
+it('keeps the document processing during a retryable failure and fails it after the last try', function () {
     config(['docchat.embedding.max_retries' => 1]);
     Http::fake(['*' => Http::response(['error' => ['message' => 'boom']], 500)]);
 
     $document = storeFixtureDocument('hello.txt', 'fail.txt', 'fail.txt', 'text/plain');
+    $job = (new IngestDocumentJob($document))->withFakeQueueInteractions();
 
-    expect(fn () => runIngestJob($document))->toThrow(EmbeddingException::class);
+    $thrown = null;
+
+    try {
+        $job->handle(app(DocumentParser::class), app(Chunker::class), app(EmbeddingProvider::class));
+    } catch (EmbeddingException $exception) {
+        $thrown = $exception;
+    }
+
+    expect($thrown)->not->toBeNull()
+        ->and($thrown->retryable)->toBeTrue()
+        ->and($document->refresh()->status)->toBe(DocumentStatus::Processing);
+
+    $job->assertNotFailed();
+
+    // The worker calls failed() once the last attempt is used up.
+    $job->failed($thrown);
 
     $document->refresh();
 
     expect($document->status)->toBe(DocumentStatus::Failed)
-        ->and($document->error)->not->toBeNull()
+        ->and($document->error)->toBe('Gemini request failed with status 500.')
+        ->and($document->embedding_model)->toBeNull()
         ->and($document->chunks()->count())->toBe(0);
 });
 
-it('marks a scanned PDF failed with the R13 message', function () {
-    $document = storeFixtureDocument('no-text.pdf', 'empty.pdf', 'empty.pdf', 'application/pdf');
+it('recovers from a 503 on a later try without ever storing failed', function () {
+    config(['docchat.embedding.max_retries' => 1]);
 
-    expect(fn () => runIngestJob($document))
-        ->toThrow(DocumentParsingException::class, 'No extractable text (scanned PDF?)');
+    Http::fakeSequence()
+        ->push(['error' => ['message' => 'unavailable']], 503)
+        ->push(['embeddings' => [['values' => array_fill(0, 1536, 0.1)]]]);
+
+    $document = storeFixtureDocument('hello.txt', 'retry.txt', 'retry.txt', 'text/plain');
+
+    $statuses = [];
+    Document::updated(function (Document $updated) use (&$statuses): void {
+        $statuses[] = $updated->status;
+    });
+
+    expect(fn () => runIngestJob($document))->toThrow(EmbeddingException::class);
+
+    runIngestJob($document->refresh());
+
+    expect($document->refresh()->status)->toBe(DocumentStatus::Ready)
+        ->and($statuses)->not->toContain(DocumentStatus::Failed);
+});
+
+it('fails a scanned PDF at once without retrying', function () {
+    Http::fake();
+
+    $document = storeFixtureDocument('no-text.pdf', 'empty.pdf', 'empty.pdf', 'application/pdf');
+    $job = (new IngestDocumentJob($document))->withFakeQueueInteractions();
+
+    $job->handle(app(DocumentParser::class), app(Chunker::class), app(EmbeddingProvider::class));
+
+    $job->assertFailed();
+    $job->assertNotReleased();
+    Http::assertNothingSent();
 
     $document->refresh();
 
@@ -143,15 +187,46 @@ it('marks a scanned PDF failed with the R13 message', function () {
         ->and($document->error)->toBe('No extractable text (scanned PDF?)');
 });
 
-it('marks a document failed when its file is missing', function () {
+it('fails at once on a rejected Gemini key with a single request', function () {
+    Http::fake(['*' => Http::response(['error' => ['message' => 'API key not valid']], 401)]);
+
+    $document = storeFixtureDocument('hello.txt', 'badkey.txt', 'badkey.txt', 'text/plain');
+    $job = (new IngestDocumentJob($document))->withFakeQueueInteractions();
+
+    $job->handle(app(DocumentParser::class), app(Chunker::class), app(EmbeddingProvider::class));
+
+    $job->assertFailed();
+    $job->assertNotReleased();
+    Http::assertSentCount(1);
+
+    expect($document->refresh()->status)->toBe(DocumentStatus::Failed)
+        ->and($document->error)->toBe('Gemini request failed with status 401.');
+});
+
+it('fails at once when the file is missing', function () {
     $document = Document::factory()->create([
         'storage_path' => 'documents/missing.txt',
         'original_filename' => 'missing.txt',
         'status' => DocumentStatus::Pending,
     ]);
 
-    expect(fn () => runIngestJob($document))
-        ->toThrow(DocumentParsingException::class, 'The uploaded file is missing.');
+    $job = (new IngestDocumentJob($document))->withFakeQueueInteractions();
+    $job->handle(app(DocumentParser::class), app(Chunker::class), app(EmbeddingProvider::class));
 
-    expect($document->refresh()->status)->toBe(DocumentStatus::Failed);
+    $job->assertFailed();
+
+    expect($document->refresh()->status)->toBe(DocumentStatus::Failed)
+        ->and($document->error)->toBe('The uploaded file is missing.');
+});
+
+it('deletes the job instead of failing when the document is gone', function () {
+    expect((new IngestDocumentJob(new Document))->deleteWhenMissingModels)->toBeTrue();
+
+    $document = Document::factory()->create();
+    $job = new IngestDocumentJob($document);
+    $document->delete();
+
+    $job->failed(new RuntimeException('gone'));
+
+    expect(Document::query()->count())->toBe(0);
 });

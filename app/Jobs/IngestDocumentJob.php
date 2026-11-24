@@ -30,6 +30,11 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
      */
     public array $backoff = [10, 30, 60];
 
+    /**
+     * A document deleted before the job runs needs no ingestion.
+     */
+    public bool $deleteWhenMissingModels = true;
+
     public function __construct(public Document $document) {}
 
     public function uniqueId(): string
@@ -98,15 +103,36 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
                 ]);
             });
         } catch (Throwable $exception) {
-            $this->markFailed($document, $exception);
+            if (self::isPermanent($exception)) {
+                // Retrying can't fix a scanned PDF or a rejected API key:
+                // record it now and stop the queue from trying again.
+                $this->markFailed($document, $exception);
+                $this->fail($exception);
 
+                return;
+            }
+
+            // Transient error: keep the document "processing" so the badge
+            // keeps polling. failed() records the error after the last try.
             throw $exception;
         }
     }
 
+    public static function isPermanent(Throwable $exception): bool
+    {
+        return $exception instanceof DocumentParsingException
+            || ($exception instanceof EmbeddingException && ! $exception->retryable);
+    }
+
     public function failed(?Throwable $exception): void
     {
-        $this->markFailed($this->document->fresh() ?? $this->document, $exception);
+        $document = $this->document->fresh();
+
+        if ($document === null) {
+            return;
+        }
+
+        $this->markFailed($document, $exception);
     }
 
     private function markFailed(Document $document, ?Throwable $exception): void
