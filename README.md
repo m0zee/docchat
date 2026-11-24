@@ -116,4 +116,6 @@ Laravel 13, PHP 8.4, Livewire 4 with Flux, Tailwind 4, PostgreSQL 16 with pgvect
 |---|---|
 | ![Documents page](docs/screenshots/documents-light.png) | ![Chat in dark mode](docs/screenshots/chat-dark.png) |
 
-The sample handbook in `database/seeders/samples/` is CC0 (public domain).
+## License
+
+DocChat is released under the [MIT License](LICENSE). The sample handbook in `database/seeders/samples/` is CC0 (public domain).
