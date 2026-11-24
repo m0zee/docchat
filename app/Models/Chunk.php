@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Database\Factories\ChunkFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\AsVector;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -51,5 +52,17 @@ class Chunk extends Model
     public function document(): BelongsTo
     {
         return $this->belongsTo(Document::class);
+    }
+
+    /**
+     * @param  Builder<Chunk>  $query
+     * @return Builder<Chunk>
+     */
+    public function scopeOwnedBy(Builder $query, User $user): Builder
+    {
+        return $query->whereHas(
+            'document',
+            fn (Builder $documentQuery): Builder => $documentQuery->where('user_id', $user->id),
+        );
     }
 }
