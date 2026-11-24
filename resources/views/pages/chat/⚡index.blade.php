@@ -8,6 +8,7 @@ use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Rag\AnswerService;
+use App\Support\ChatRateLimit;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -52,11 +53,19 @@ new #[Title('Chat')] class extends Component {
         }
     }
 
-    public function send(): void
+    public function send(ChatRateLimit $limit): void
     {
         $this->validate(['question' => ['required', 'string', 'max:2000']]);
 
         if ($this->pending !== null) {
+            return;
+        }
+
+        $wait = $limit->attempt($this->user());
+
+        if ($wait !== null) {
+            $this->addError('question', __("You've sent too many questions. Try again in :seconds seconds.", ['seconds' => $wait]));
+
             return;
         }
 
