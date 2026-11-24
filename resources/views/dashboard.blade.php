@@ -14,7 +14,7 @@
     <div class="flex w-full max-w-5xl flex-col gap-8">
         <div>
             <flux:heading size="xl">{{ __('Welcome, :name', ['name' => $user->name]) }}</flux:heading>
-            <flux:subheading>{{ __('Upload documents, then ask questions about them in Chat.') }}</flux:subheading>
+            <flux:subheading>{{ __(':workspace · Upload documents, then ask questions about them in Chat.', ['workspace' => $workspace->name]) }}</flux:subheading>
         </div>
 
         <div class="grid gap-4 md:grid-cols-3">

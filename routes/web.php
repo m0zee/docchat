@@ -11,6 +11,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::livewire('chat', 'pages::chat.index')->name('chat.index');
     Route::livewire('chat/{conversation}', 'pages::chat.index')->name('chat.show');
+
+    Route::livewire('workspace', 'pages::workspace.general')->name('workspace.general');
 });
 
 require __DIR__.'/settings.php';

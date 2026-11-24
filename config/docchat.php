@@ -38,6 +38,14 @@ return [
         ],
     ],
 
+    // Owner-only pages in Workspace settings: route name => label.
+    'workspace_nav' => [
+        'workspace.members' => 'Members',
+        'workspace.api-keys' => 'API keys',
+        'workspace.webhooks' => 'Webhooks',
+        'workspace.usage' => 'Usage',
+    ],
+
     'rag' => [
         'top_k' => (int) env('DOCCHAT_RAG_TOP_K', 5),
         'similarity_threshold' => (float) env('DOCCHAT_RAG_SIMILARITY_THRESHOLD', 0.5),
