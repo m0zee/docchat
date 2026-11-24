@@ -115,7 +115,9 @@ test('widget.js is served small and cacheable', function () {
         ->assertHeader('Content-Type', 'application/javascript; charset=utf-8')
         ->assertHeader('Cache-Control', 'max-age=3600, public');
 
+    // ASCII only, so it reads right whatever charset the host page uses.
     expect(strlen($response->getContent()))->toBeLessThan(30 * 1024)
+        ->and(preg_match('/[^\x00-\x7F]/', $response->getContent()))->toBe(0)
         ->and($response->headers->get('Set-Cookie'))->toBeNull();
 
     $this->get('/widget.js', ['If-None-Match' => $response->headers->get('ETag')])->assertStatus(304);

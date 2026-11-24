@@ -117,11 +117,11 @@
     el('div', { class: 'head' }, [
       title,
       el('button', { class: 'icon', type: 'button', text: 'New chat', title: 'Start a new conversation', onclick: newChat }),
-      el('button', { class: 'icon', type: 'button', text: '✕', 'aria-label': 'Close chat', onclick: function () { toggle(false); } }),
+      el('button', { class: 'icon', type: 'button', text: '\u2715', 'aria-label': 'Close chat', onclick: function () { toggle(false); } }),
     ]),
     log,
     form,
-    el('div', { class: 'foot', text: 'Answers come from this site’s documents.' }),
+    el('div', { class: 'foot', text: 'Answers come from this site\u2019s documents.' }),
   ]);
   var wrap = el('div', { class: 'wrap' }, [panel, bubble]);
   root.appendChild(style);
