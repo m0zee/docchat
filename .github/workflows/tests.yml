@@ -77,7 +77,7 @@ jobs:
         run: |
           docker run --rm --entrypoint "" -e APP_KEY="base64:$(head -c 32 /dev/urandom | base64)" docchat-app:production sh -exc '
             test ! -d vendor/pestphp
-            test ! -d vendor/phpstan
+            test ! -d vendor/phpstan/phpstan
             test -f public/build/manifest.json
             php artisan about --only=environment
           '
