@@ -23,6 +23,8 @@ class AskController extends Controller
      * documents." and refused is true. Send the same external_conversation_id
      * to continue a conversation. With format, "formatted" holds message
      * parts ready to send to Telegram, WhatsApp or Discord.
+     *
+     * @response array{data: array{answer: string, citations: list<array{n: int, document_id: int, title: string, page: int, snippet: string}>, refused: bool, conversation_id: int, message_id: int, usage: array{prompt_tokens: int, completion_tokens: int, latency_ms: int, cache_hit: 'exact'|'semantic'|null}, formatted?: list<string>}}
      */
     public function __invoke(AskRequest $request): JsonResponse
     {

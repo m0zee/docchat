@@ -22,9 +22,17 @@ class StoreDocumentRequest extends FormRequest
             'title' => ['nullable', 'string', 'max:255'],
             /** Where the file came from. Defaults to "api". */
             'source' => ['nullable', Rule::enum(DocumentSource::class)->except([DocumentSource::Upload])],
-            /** Your id for the file, such as a Google Drive file id. Uploading the same id again replaces the document. */
+            /**
+             * Your id for the file, such as a Google Drive file id. Uploading the same id again replaces the document.
+             *
+             * @example 1AbCdEfGhIjKlMnOp
+             */
             'external_id' => ['nullable', 'string', 'max:255'],
-            /** Any JSON object. It comes back in the document.ready and document.failed webhooks. */
+            /**
+             * Any JSON object. It comes back in the document.ready and document.failed webhooks.
+             *
+             * @example {"chat_id": 12345}
+             */
             'meta' => ['nullable'],
         ];
     }

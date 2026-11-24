@@ -15,16 +15,28 @@ class AskRequest extends FormRequest
     public function rules(): array
     {
         return [
-            /** The question, up to 2,000 characters. */
+            /**
+             * The question, up to 2,000 characters.
+             *
+             * @example How long can I keep a DVD?
+             */
             'question' => ['required', 'string', 'max:2000'],
             /** Search only these documents. Default: every ready document in the workspace. */
             'document_ids' => ['nullable', 'array', 'max:50'],
             'document_ids.*' => ['integer'],
             /** Which channel asks, for usage reports. Default "api". */
             'channel' => ['nullable', Rule::enum(ConversationChannel::class)->only(self::channels())],
-            /** Your id for the chat, for example "telegram:12345". The same id continues the same conversation, with follow-up context. */
+            /**
+             * Your id for the chat. The same id continues the same conversation, with follow-up context.
+             *
+             * @example telegram:12345
+             */
             'external_conversation_id' => ['nullable', 'string', 'max:255'],
-            /** Adds a "formatted" array of ready-to-send message parts. */
+            /**
+             * Adds a "formatted" array of ready-to-send message parts.
+             *
+             * @example telegram_html
+             */
             'format' => ['nullable', Rule::enum(MessageFormat::class)],
         ];
     }
