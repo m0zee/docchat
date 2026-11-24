@@ -75,10 +75,12 @@ jobs:
 
       - name: Check the image has no dev packages and boots Laravel
         run: |
-          docker run --rm --entrypoint "" docchat-app:production sh -c '
-            test ! -d vendor/pestphp && test ! -d vendor/phpstan &&
-            test -f public/build/manifest.json &&
-            APP_KEY=base64:$(head -c 32 /dev/urandom | base64) php artisan about --only=environment'
+          docker run --rm --entrypoint "" -e APP_KEY="base64:$(head -c 32 /dev/urandom | base64)" docchat-app:production sh -exc '
+            test ! -d vendor/pestphp
+            test ! -d vendor/phpstan
+            test -f public/build/manifest.json
+            php artisan about --only=environment
+          '
 
       - name: Validate the production compose file
         run: |
