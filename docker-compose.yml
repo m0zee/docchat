@@ -40,6 +40,8 @@ services:
   worker:
     <<: *app-image
     command: ["php", "artisan", "queue:work", "--tries=3"]
+    healthcheck:
+      disable: true
     volumes:
       - .:/var/www/html
       - vendor:/var/www/html/vendor
