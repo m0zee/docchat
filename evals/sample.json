@@ -1,0 +1,58 @@
+[
+  {
+    "question": "How much does a Regional Card cost for someone who lives outside the county?",
+    "expected_keywords": ["30"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 1
+  },
+  {
+    "question": "How many items can I borrow at the same time?",
+    "expected_keywords": ["15"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 2
+  },
+  {
+    "question": "How long can I keep a DVD?",
+    "expected_keywords": ["7 days"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 2
+  },
+  {
+    "question": "What is the maximum late fee for one item?",
+    "expected_keywords": ["10"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 3
+  },
+  {
+    "question": "What happens if I return a lost item within six months?",
+    "expected_keywords": ["refund", "processing fee"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 3
+  },
+  {
+    "question": "When is the Main Branch open on Saturdays?",
+    "expected_keywords": ["10", "4"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 4
+  },
+  {
+    "question": "What does colour printing cost per page?",
+    "expected_keywords": ["50 cents"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 5
+  },
+  {
+    "question": "How many people fit in the Community Room?",
+    "expected_keywords": ["40"],
+    "expected_document": "harbor-point-library-handbook",
+    "expected_page": 6
+  },
+  {
+    "question": "Who is the head librarian of Harbor Point?",
+    "should_refuse": true
+  },
+  {
+    "question": "Is there free parking at the Eastside Branch?",
+    "should_refuse": true
+  }
+]
