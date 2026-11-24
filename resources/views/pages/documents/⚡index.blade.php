@@ -1,10 +1,16 @@
 <?php
 
+use App\Enums\DocumentStatus;
+use App\Models\Document;
 use App\Models\User;
 use App\Rules\DocumentUpload;
 use App\Services\Documents\DocumentService;
+use App\Support\FileSize;
 use Flux\Flux;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -45,9 +51,47 @@ new #[Title('Documents')] class extends Component {
 
         Flux::toast(variant: 'success', text: __('Document uploaded. Processing has started.'));
     }
+
+    public function delete(int $documentId, DocumentService $service): void
+    {
+        $document = Document::findOrFail($documentId);
+
+        Gate::authorize('delete', $document);
+
+        $service->delete($document);
+
+        Flux::toast(variant: 'success', text: __('Document deleted.'));
+    }
+
+    /**
+     * @return Collection<int, Document>
+     */
+    #[Computed]
+    public function documents(): Collection
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return new Collection();
+        }
+
+        return $user->documents()->withCount('chunks')->latest()->get();
+    }
+
+    #[Computed]
+    public function hasActiveDocuments(): bool
+    {
+        return $this->documents->contains(
+            fn (Document $document): bool => in_array(
+                $document->status,
+                [DocumentStatus::Pending, DocumentStatus::Processing],
+                true,
+            ),
+        );
+    }
 }; ?>
 
-<section class="w-full max-w-3xl">
+<section class="w-full max-w-5xl">
     <div class="mb-6">
         <flux:heading size="xl">{{ __('Documents') }}</flux:heading>
         <flux:subheading>
@@ -91,8 +135,73 @@ new #[Title('Documents')] class extends Component {
         </form>
     </div>
 
-    <div class="mt-8 rounded-xl border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700">
-        <flux:icon name="document-plus" class="mx-auto size-8 text-zinc-400" />
-        <flux:text class="mt-2">{{ __('Your documents will appear here.') }}</flux:text>
+    <div class="mt-8">
+        <div class="mb-3 flex items-end justify-between gap-4">
+            <div>
+                <flux:heading size="lg">{{ __('Your documents') }}</flux:heading>
+                <flux:text class="mt-1">{{ $this->documents->count() }} {{ __('documents') }}</flux:text>
+            </div>
+        </div>
+
+        @if ($this->documents->isEmpty())
+            <div class="rounded-xl border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700">
+                <flux:icon name="document-plus" class="mx-auto size-8 text-zinc-400" />
+                <flux:text class="mt-2">{{ __('Your documents will appear here.') }}</flux:text>
+            </div>
+        @else
+            <div @if ($this->hasActiveDocuments) wire:poll.3s @endif>
+                <flux:table>
+                    <flux:table.columns>
+                        <flux:table.column>{{ __('Document') }}</flux:table.column>
+                        <flux:table.column>{{ __('Status') }}</flux:table.column>
+                        <flux:table.column>{{ __('Pages') }}</flux:table.column>
+                        <flux:table.column>{{ __('Chunks') }}</flux:table.column>
+                        <flux:table.column>{{ __('Size') }}</flux:table.column>
+                        <flux:table.column>{{ __('Uploaded') }}</flux:table.column>
+                        <flux:table.column></flux:table.column>
+                    </flux:table.columns>
+
+                    <flux:table.rows>
+                        @foreach ($this->documents as $document)
+                            <flux:table.row :key="$document->id">
+                                <flux:table.cell variant="strong" class="whitespace-normal">
+                                    <div>{{ $document->title }}</div>
+                                    <div class="text-xs font-normal text-zinc-500">{{ $document->original_filename }}</div>
+
+                                    @if ($document->status === DocumentStatus::Failed && $document->error)
+                                        <div class="mt-1 text-xs font-normal text-red-600 dark:text-red-400">
+                                            {{ $document->error }}
+                                        </div>
+                                    @endif
+                                </flux:table.cell>
+
+                                <flux:table.cell>
+                                    <flux:badge size="sm" :color="$document->status->badgeColor()">
+                                        {{ $document->status->label() }}
+                                    </flux:badge>
+                                </flux:table.cell>
+
+                                <flux:table.cell>{{ $document->page_count ?? '—' }}</flux:table.cell>
+                                <flux:table.cell>{{ $document->chunks_count }}</flux:table.cell>
+                                <flux:table.cell>{{ FileSize::format($document->size_bytes) }}</flux:table.cell>
+                                <flux:table.cell>{{ $document->created_at?->diffForHumans() }}</flux:table.cell>
+
+                                <flux:table.cell class="text-end">
+                                    <flux:button
+                                        variant="ghost"
+                                        size="sm"
+                                        icon="trash"
+                                        wire:click="delete({{ $document->id }})"
+                                        wire:confirm="{{ __('Delete this document and all of its chunks?') }}"
+                                    >
+                                        {{ __('Delete') }}
+                                    </flux:button>
+                                </flux:table.cell>
+                            </flux:table.row>
+                        @endforeach
+                    </flux:table.rows>
+                </flux:table>
+            </div>
+        @endif
     </div>
 </section>
