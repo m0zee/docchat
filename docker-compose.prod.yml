@@ -98,6 +98,15 @@ services:
       WEBHOOK_URL: https://${N8N_DOMAIN:-n8n.${DOCCHAT_DOMAIN}}/
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_PERSONALIZATION_ENABLED: "false"
+      # The workflows in n8n/ read these. Code nodes may read env vars and use
+      # node's crypto module to check DocChat's webhook signatures.
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      DOCCHAT_API_URL: ${DOCCHAT_API_URL:-http://app:8080}
+      DOCCHAT_WEBHOOK_SECRET: ${DOCCHAT_WEBHOOK_SECRET:-}
+      DOCCHAT_NOTIFY_EMAIL: ${DOCCHAT_NOTIFY_EMAIL:-}
+      # How DocChat reaches n8n for eval callbacks.
+      DOCCHAT_CALLBACK_BASE_URL: ${DOCCHAT_CALLBACK_BASE_URL:-http://n8n:5678}
     volumes:
       - n8n_data:/home/node/.n8n
     depends_on:
