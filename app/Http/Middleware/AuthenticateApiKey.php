@@ -46,7 +46,15 @@ class AuthenticateApiKey
             return ApiError::response(403, 'wrong_key_type', 'This kind of API key cannot be used here.');
         }
 
-        $limited = $this->rateLimit($key);
+        $origin = $request->headers->get('Origin');
+
+        if ($key->type === ApiKeyType::Public && ! $key->allowsOrigin($origin)) {
+            // Browsers always send Origin on cross-site fetches; a public key
+            // only works from the sites its owner listed.
+            return ApiError::response(403, 'origin_not_allowed', 'This widget key is not allowed on this website. Add the site in DocChat under Workspace > Widget.');
+        }
+
+        $limited = $this->rateLimit($key, $request);
 
         if ($limited !== null) {
             return $limited;
@@ -63,19 +71,23 @@ class AuthenticateApiKey
 
         $response = $next($request);
         $response->headers->set('X-RateLimit-Limit', (string) $key->rateLimit());
-        $response->headers->set('X-RateLimit-Remaining', (string) RateLimiter::remaining(self::limiterKey($key), $key->rateLimit()));
+        $response->headers->set('X-RateLimit-Remaining', (string) RateLimiter::remaining(self::limiterKey($key, $request), $key->rateLimit()));
 
         return $response;
     }
 
-    public static function limiterKey(ApiKey $key): string
+    /**
+     * A public key is shared by every visitor of a website, so its limit is
+     * per visitor IP. Other keys have one limit for the key.
+     */
+    public static function limiterKey(ApiKey $key, ?Request $request = null): string
     {
-        return 'api-key:'.$key->id;
+        return 'api-key:'.$key->id.($key->type === ApiKeyType::Public ? ':'.$request?->ip() : '');
     }
 
-    private function rateLimit(ApiKey $key): ?Response
+    private function rateLimit(ApiKey $key, Request $request): ?Response
     {
-        $limiterKey = self::limiterKey($key);
+        $limiterKey = self::limiterKey($key, $request);
 
         if (RateLimiter::tooManyAttempts($limiterKey, $key->rateLimit())) {
             $retryAfter = max(1, RateLimiter::availableIn($limiterKey));

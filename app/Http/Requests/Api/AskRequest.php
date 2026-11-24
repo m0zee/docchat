@@ -2,10 +2,14 @@
 
 namespace App\Http\Requests\Api;
 
+use App\Enums\ApiKeyType;
 use App\Enums\ConversationChannel;
+use App\Http\Middleware\AuthenticateApiKey;
+use App\Models\ApiKey;
 use App\Services\Formatting\MessageFormat;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class AskRequest extends FormRequest
 {
@@ -41,6 +45,24 @@ class AskRequest extends FormRequest
         ];
     }
 
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            // Website visitors (public keys) can only use widget conversations,
+            // named by a random visitor id the widget keeps in the browser.
+            if ($this->fromPublicKey() && ! preg_match('/^[A-Za-z0-9_-]{16,64}$/', $this->string('external_conversation_id')->toString())) {
+                $validator->errors()->add('external_conversation_id', 'Widget requests need a random conversation id of 16 to 64 letters, digits, _ or -.');
+            }
+        });
+    }
+
+    public function fromPublicKey(): bool
+    {
+        $key = $this->attributes->get(AuthenticateApiKey::ATTRIBUTE);
+
+        return $key instanceof ApiKey && $key->type === ApiKeyType::Public;
+    }
+
     /**
      * @return list<ConversationChannel>
      */
@@ -57,6 +79,10 @@ class AskRequest extends FormRequest
 
     public function channel(): ConversationChannel
     {
+        if ($this->fromPublicKey()) {
+            return ConversationChannel::Widget;
+        }
+
         return $this->enum('channel', ConversationChannel::class) ?? ConversationChannel::Api;
     }
 
@@ -70,6 +96,10 @@ class AskRequest extends FormRequest
      */
     public function documentIds(): ?array
     {
+        if ($this->fromPublicKey()) {
+            return null;
+        }
+
         $ids = $this->input('document_ids');
 
         return is_array($ids) && $ids !== [] ? array_values(array_unique(array_map('intval', $ids))) : null;
