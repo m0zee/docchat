@@ -60,3 +60,27 @@ jobs:
 
       - name: Run CI Checks
         run: composer ci:check
+
+  production-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the production image
+        run: docker build --target production -f docker/app/Dockerfile -t docchat-app:production .
+
+      - name: Check the image has no dev packages and boots Laravel
+        run: |
+          docker run --rm --entrypoint "" docchat-app:production sh -c '
+            test ! -d vendor/pestphp && test ! -d vendor/phpstan &&
+            test -f public/build/manifest.json &&
+            APP_KEY=base64:$(head -c 32 /dev/urandom | base64) php artisan about --only=environment'
+
+      - name: Validate the production compose file
+        run: |
+          cp .env.production.example .env
+          docker compose -f docker-compose.prod.yml config -q

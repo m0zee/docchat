@@ -4,6 +4,7 @@ x-app-image: &app-image
   build:
     context: .
     dockerfile: docker/app/Dockerfile
+    target: development
   image: docchat-app:local
 
 services:
