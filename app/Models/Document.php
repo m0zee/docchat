@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DocumentSource;
 use App\Enums\DocumentStatus;
 use App\Models\Concerns\BelongsToWorkspace;
 use Database\Factories\DocumentFactory;
@@ -15,6 +16,10 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int|null $user_id
+ * @property DocumentSource $source
+ * @property string|null $external_id
+ * @property array<string, mixed>|null $meta
+ * @property string|null $content_hash
  * @property string $title
  * @property string $original_filename
  * @property string $storage_path
@@ -32,6 +37,10 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'workspace_id',
     'user_id',
+    'source',
+    'external_id',
+    'meta',
+    'content_hash',
     'title',
     'original_filename',
     'storage_path',
@@ -56,6 +65,8 @@ class Document extends Model
             'size_bytes' => 'integer',
             'page_count' => 'integer',
             'status' => DocumentStatus::class,
+            'source' => DocumentSource::class,
+            'meta' => 'array',
         ];
     }
 

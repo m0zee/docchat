@@ -186,7 +186,12 @@ new #[Title('Documents')] class extends Component {
                             <flux:table.row :key="$document->id">
                                 <flux:table.cell variant="strong" class="whitespace-normal">
                                     <div>{{ $document->title }}</div>
-                                    <div class="text-xs font-normal text-zinc-500">{{ $document->original_filename }}</div>
+                                    <div class="text-xs font-normal text-zinc-500">
+                                        {{ $document->original_filename }}
+                                        @if ($document->source !== \App\Enums\DocumentSource::Upload)
+                                            <span class="ms-1 rounded bg-zinc-100 px-1.5 py-0.5 dark:bg-zinc-800" data-test="document-source">{{ $document->source->label() }}</span>
+                                        @endif
+                                    </div>
 
                                     @if ($document->status === DocumentStatus::Failed && $document->error)
                                         <div class="mt-1 text-xs font-normal text-red-600 dark:text-red-400">

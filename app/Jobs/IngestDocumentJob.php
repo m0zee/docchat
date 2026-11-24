@@ -9,7 +9,7 @@ use App\Exceptions\EmbeddingException;
 use App\Models\Document;
 use App\Services\Ingestion\Chunker;
 use App\Services\Ingestion\DocumentParser;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +17,11 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
-class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
+/**
+ * Unique until processing starts, so a re-upload while a run is under way
+ * queues a fresh run for the new file instead of being dropped.
+ */
+class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
     use Queueable;
 
@@ -61,6 +65,15 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
                 throw new DocumentParsingException('The uploaded file is missing.');
             }
 
+            $hash = (string) hash_file('sha256', $disk->path($document->storage_path));
+
+            if ($this->unchanged($document, $hash)) {
+                // Same bytes, same embedding model: the chunks are still valid.
+                $document->update(['status' => DocumentStatus::Ready, 'error' => null]);
+
+                return;
+            }
+
             $extension = strtolower(pathinfo($document->original_filename, PATHINFO_EXTENSION));
             $parsed = $parser->parse($disk->path($document->storage_path), $extension);
             $chunks = $chunker->chunk($parsed->pages);
@@ -82,7 +95,7 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
                 throw new EmbeddingException('Gemini returned an unexpected number of embeddings.');
             }
 
-            DB::transaction(function () use ($document, $parsed, $chunks, $vectors): void {
+            DB::transaction(function () use ($document, $parsed, $chunks, $vectors, $hash): void {
                 $document->chunks()->delete();
 
                 foreach ($chunks as $index => $chunk) {
@@ -99,6 +112,7 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
                 $document->update([
                     'page_count' => $parsed->pageCount,
                     'embedding_model' => (string) config('docchat.embedding.model'),
+                    'content_hash' => $hash,
                     'status' => DocumentStatus::Ready,
                     'error' => null,
                 ]);
@@ -117,6 +131,13 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
             // keeps polling. failed() records the error after the last try.
             throw $exception;
         }
+    }
+
+    private function unchanged(Document $document, string $hash): bool
+    {
+        return $document->content_hash === $hash
+            && $document->embedding_model === (string) config('docchat.embedding.model')
+            && $document->chunks()->exists();
     }
 
     public static function isPermanent(Throwable $exception): bool
