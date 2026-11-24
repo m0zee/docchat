@@ -47,6 +47,7 @@ return [
     'workspace_nav' => [
         'workspace.members' => 'Members',
         'workspace.api-keys' => 'API keys',
+        'workspace.widget' => 'Widget',
         'workspace.channels' => 'Chat apps',
         'workspace.webhooks' => 'Webhooks',
         'workspace.usage' => 'Usage',
