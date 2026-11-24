@@ -71,6 +71,7 @@ return [
     // Shared chat bots (Telegram, WhatsApp, Discord) run in n8n with one
     // platform service key. Documents sent to a bot report back to the bot's
     // workflow through this signed webhook, whatever workspace they are in.
+    // "{channel}" in the URL is replaced with telegram or whatsapp.
     'channels' => [
         'telegram' => [
             'bot_username' => env('TELEGRAM_BOT_USERNAME'),

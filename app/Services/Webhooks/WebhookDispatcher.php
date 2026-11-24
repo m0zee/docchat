@@ -45,7 +45,7 @@ class WebhookDispatcher
         if (in_array($document->source, [DocumentSource::Telegram, DocumentSource::WhatsApp], true)
             && filled(config('docchat.channels.webhook_url')) && filled(config('docchat.channels.webhook_secret'))) {
             // Sent to a shared bot: tell the bot's workflow, which replies in the chat.
-            SendChannelWebhookJob::dispatch($event, $document->workspace_id, $data);
+            SendChannelWebhookJob::dispatch($document->source->value, $event, $document->workspace_id, $data);
         }
     }
 }

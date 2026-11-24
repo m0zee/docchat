@@ -161,7 +161,7 @@ test('a service key cannot reach another workspace\'s documents', function () {
 
 test('documents sent to a bot report back through the channel webhook', function () {
     Queue::fake();
-    config(['docchat.channels.webhook_url' => 'https://n8n.test/webhook/telegram-docchat', 'docchat.channels.webhook_secret' => 'whsec_bot']);
+    config(['docchat.channels.webhook_url' => 'https://n8n.test/webhook/{channel}-docchat', 'docchat.channels.webhook_secret' => 'whsec_bot']);
 
     $fromBot = Document::factory()->for($this->owner)->create(['source' => DocumentSource::Telegram, 'status' => DocumentStatus::Ready, 'meta' => ['chat_id' => 1001]]);
     $uploaded = Document::factory()->for($this->owner)->create(['status' => DocumentStatus::Ready]);

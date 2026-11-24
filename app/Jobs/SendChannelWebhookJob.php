@@ -30,6 +30,7 @@ class SendChannelWebhookJob implements ShouldQueue
      * @param  array<string, mixed>  $data
      */
     public function __construct(
+        public string $channel,
         public string $event,
         public int $workspaceId,
         public array $data,
@@ -40,7 +41,8 @@ class SendChannelWebhookJob implements ShouldQueue
 
     public function handle(): void
     {
-        $url = (string) config('docchat.channels.webhook_url');
+        // One workflow per chat app: "{channel}" in the URL becomes telegram, whatsapp...
+        $url = str_replace('{channel}', $this->channel, (string) config('docchat.channels.webhook_url'));
         $secret = (string) config('docchat.channels.webhook_secret');
 
         if ($url === '' || $secret === '') {
