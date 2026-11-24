@@ -12,7 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // In production only Caddy can reach the app container (it has no
+        // host port), so trust the proxy headers it sets: HTTPS scheme and
+        // client IP. Without this, Laravel builds http:// URLs behind Caddy.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

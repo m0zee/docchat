@@ -1,0 +1,17 @@
+# DOCCHAT_DOMAIN is a hostname that points at this server, for example
+# 203.0.113.10.sslip.io. Caddy gets and renews a Let's Encrypt certificate for it.
+{$DOCCHAT_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy app:8080 {
+		# Send streamed chat answers to the browser as they arrive.
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
