@@ -1,0 +1,178 @@
+{
+  "id": "dcNightlyEval001",
+  "name": "DocChat: nightly eval",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Nightly eval\nEvery night: starts an eval run in DocChat with the `sample` eval set, waits for DocChat to post the results back to this execution, checks the signature, and emails a summary.\n\nSetup: see `n8n/README.md`.",
+        "width": 460,
+        "height": 280
+      },
+      "id": "ac3f6d15-e276-51e5-8e4d-da6c274b2756",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "469de74d-fbf7-5d4b-872d-46fae9cd779d",
+      "name": "Every night",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/evals/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ eval_set: 'sample', callback_url: $execution.resumeUrl.replace(/^https?:\\/\\/[^/]+/, $env.DOCCHAT_CALLBACK_BASE_URL || 'http://n8n:5678') }) }}",
+        "options": {}
+      },
+      "id": "87e3b0ed-150d-5ac2-aff1-fcb94a0f9f47",
+      "name": "Start eval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 2,
+        "resumeUnit": "hours",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "d63d3f52-c841-5837-ab30-08946324a916",
+      "name": "Wait for results",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        0
+      ],
+      "webhookId": "f104c4d1-8766-5c86-b1bc-facb3645097b"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Checks DocChat's signature: HMAC-SHA256 of the exact raw body with the\n// webhook secret, plus a 5 minute window on the timestamp against replays.\nconst crypto = require('crypto');\nconst secret = $('Start eval').first().json.data.callback_secret;\nconst item = $input.first();\nconst headers = item.json.headers || {};\nlet raw = '';\nif (item.binary && item.binary.data) {\n  raw = (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8');\n}\nconst signature = String(headers['x-docchat-signature'] || '');\nconst timestamp = String(headers['x-docchat-timestamp'] || '');\nconst expected = 'sha256=' + crypto.createHmac('sha256', String(secret || '')).update(raw).digest('hex');\nlet body = null;\ntry { body = JSON.parse(raw); } catch (error) { body = null; }\nconst fresh = /^\\d+$/.test(timestamp) && Math.abs(Date.now() / 1000 - Number(timestamp)) <= 300;\nconst valid = Boolean(secret)\n  && signature.length === expected.length\n  && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))\n  && fresh\n  && body !== null\n  && String(body.timestamp) === timestamp;\n\nconst run = valid ? body.data.eval_run : null;\nconst pct = (value) => (value === null || value === undefined ? '-' : `${Math.round(value * 100)}%`);\nlet subject;\nlet text;\n\nif (!item.json.headers) {\n  subject = 'DocChat eval: no result after 2 hours';\n  text = `Eval run ${$('Start eval').first().json.data.id} did not report back. Check the worker logs.`;\n} else if (!valid) {\n  subject = 'DocChat eval: callback signature did not match';\n  text = 'A request reached the eval callback without a valid signature. It was ignored.';\n} else {\n  const s = run.summary || {};\n  subject = `DocChat eval ${run.status}: hit rate ${pct(s.retrieval_hit_rate)}, keywords ${pct(s.keyword_match_rate)}`;\n  const misses = (run.results || [])\n    .filter((r) => r.error || (r.should_refuse ? !r.refused : !r.hit))\n    .map((r) => `- ${r.question} (${r.error ? 'error: ' + r.error : r.should_refuse ? 'answered, should refuse' : 'expected page not retrieved'})`);\n  text = [\n    `Run ${run.id}: ${run.completed_cases} of ${run.cases} cases.`,\n    '',\n    `Retrieval hit rate: ${pct(s.retrieval_hit_rate)}`,\n    `Keyword match rate: ${pct(s.keyword_match_rate)}`,\n    `Correct refusals: ${pct(s.correct_refusal_rate)}`,\n    `Wrong refusals: ${pct(s.false_refusal_rate)}`,\n    `Average latency: ${s.avg_latency_ms ?? '-'} ms, total tokens: ${s.total_tokens ?? '-'}, errors: ${s.errors ?? 0}`,\n    run.error ? `\\nThe run failed: ${run.error}` : '',\n    misses.length ? '\\nMisses:\\n' + misses.join('\\n') : '\\nNo misses.',\n  ].join('\\n');\n}\n\nreturn [{ json: { valid, subject, text } }];"
+      },
+      "id": "0ed48c91-2c5d-5850-9275-b9b344411a73",
+      "name": "Check and summarize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.DOCCHAT_NOTIFY_EMAIL }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "bc14ee8a-9d90-51e2-9a4b-9033bcc98f59",
+      "name": "Email summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1040,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Every night": {
+      "main": [
+        [
+          {
+            "node": "Start eval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start eval": {
+      "main": [
+        [
+          {
+            "node": "Wait for results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for results": {
+      "main": [
+        [
+          {
+            "node": "Check and summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check and summarize": {
+      "main": [
+        [
+          {
+            "node": "Email summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}
