@@ -52,6 +52,16 @@ return [
 
     'channels' => [
 
+        // One line per answer: model, tokens, latency, retrieval stats. Never
+        // the question or document text.
+        'docchat' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/docchat.log'),
+            'level' => 'info',
+            'days' => 14,
+            'replace_placeholders' => true,
+        ],
+
         'stack' => [
             'driver' => 'stack',
             'channels' => explode(',', (string) env('LOG_STACK', 'single')),
