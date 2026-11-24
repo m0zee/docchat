@@ -10,6 +10,7 @@ use App\Exceptions\EmbeddingException;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\Chat\ChatResult;
+use App\Services\Usage\UsageRecorder;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -32,6 +33,7 @@ class AnswerService
         private PromptBuilder $prompts,
         private CitationExtractor $citations,
         private ChatProvider $chat,
+        private UsageRecorder $usage,
     ) {}
 
     /**
@@ -73,7 +75,7 @@ class AnswerService
             $message = $this->saveAssistant($conversation, '', $started, error: $exception->retryable
                 ? self::BUSY
                 : 'Search is not available: '.$exception->getMessage());
-            $this->log($conversation, $message, null);
+            $this->log($conversation, $message, null, embeddingTokens: 0);
 
             return $message;
         }
@@ -81,7 +83,7 @@ class AnswerService
         if ($this->lastRetrieved === []) {
             // Nothing relevant: answer without spending a model call.
             $message = $this->saveAssistant($conversation, self::NOT_FOUND, $started, citations: []);
-            $this->log($conversation, $message, null);
+            $this->log($conversation, $message, null, UsageRecorder::estimateTokens($question));
 
             return $message;
         }
@@ -122,13 +124,15 @@ class AnswerService
             error: $error,
         );
 
-        $this->log($conversation, $message, $result?->model);
+        $this->log($conversation, $message, $result?->model, UsageRecorder::estimateTokens($question));
 
         return $message;
     }
 
-    private function log(Conversation $conversation, Message $message, ?string $model): void
+    private function log(Conversation $conversation, Message $message, ?string $model, int $embeddingTokens): void
     {
+        $this->usage->question($conversation, $message, $embeddingTokens);
+
         Log::channel('docchat')->info('answer', [
             'conversation_id' => $conversation->id,
             'message_id' => $message->id,

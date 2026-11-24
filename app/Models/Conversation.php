@@ -32,6 +32,13 @@ class Conversation extends Model
     use BelongsToWorkspace, HasFactory;
 
     /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'channel' => 'web',
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

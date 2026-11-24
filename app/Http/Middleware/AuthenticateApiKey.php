@@ -53,6 +53,7 @@ class AuthenticateApiKey
         }
 
         $request->attributes->set(self::ATTRIBUTE, $key);
+        $this->current->setApiKey($key);
 
         if ($key->workspace !== null) {
             $this->current->set($key->workspace);

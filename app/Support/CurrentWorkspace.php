@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\ApiKey;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Auth;
@@ -15,6 +16,8 @@ use RuntimeException;
 class CurrentWorkspace
 {
     private ?Workspace $workspace = null;
+
+    private ?ApiKey $apiKey = null;
 
     /**
      * @var array{string, Workspace|null}|null
@@ -59,9 +62,23 @@ class CurrentWorkspace
         return $this->get() ?? throw new RuntimeException('No current workspace.');
     }
 
+    public function setApiKey(?ApiKey $key): void
+    {
+        $this->apiKey = $key;
+    }
+
+    /**
+     * The API key of this request, if it came through the API.
+     */
+    public function apiKey(): ?ApiKey
+    {
+        return $this->apiKey;
+    }
+
     public function forget(): void
     {
         $this->workspace = null;
+        $this->apiKey = null;
         $this->fromUser = null;
     }
 }

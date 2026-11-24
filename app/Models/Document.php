@@ -57,6 +57,13 @@ class Document extends Model
     use BelongsToWorkspace, HasFactory;
 
     /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'source' => 'upload',
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

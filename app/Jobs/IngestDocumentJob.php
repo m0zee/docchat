@@ -9,6 +9,7 @@ use App\Exceptions\EmbeddingException;
 use App\Models\Document;
 use App\Services\Ingestion\Chunker;
 use App\Services\Ingestion\DocumentParser;
+use App\Services\Usage\UsageRecorder;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -50,7 +51,10 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
         DocumentParser $parser,
         Chunker $chunker,
         EmbeddingProvider $embeddings,
+        ?UsageRecorder $usage = null,
     ): void {
+        $usage ??= app(UsageRecorder::class);
+        $started = hrtime(true);
         $document = $this->document->refresh();
 
         $document->update([
@@ -117,6 +121,12 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
                     'error' => null,
                 ]);
             });
+
+            $usage->ingest(
+                $document,
+                array_sum(array_map(fn ($chunk): int => $chunk->tokenEstimate, $chunks)),
+                (int) round((hrtime(true) - $started) / 1_000_000),
+            );
         } catch (Throwable $exception) {
             if (self::isPermanent($exception)) {
                 // Retrying can't fix a scanned PDF or a rejected API key:
