@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -26,6 +27,14 @@ class Workspace extends Model
 {
     /** @use HasFactory<WorkspaceFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        // Rows cascade in the database; the uploaded files need deleting here.
+        static::deleted(function (Workspace $workspace): void {
+            Storage::disk('local')->deleteDirectory('documents/'.$workspace->id);
+        });
+    }
 
     /**
      * @return array<string, string>

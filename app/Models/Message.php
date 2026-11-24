@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
+ * @property int $workspace_id
  * @property int $conversation_id
  * @property MessageRole $role
  * @property string $content
@@ -26,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property-read Conversation $conversation
  */
 #[Fillable([
+    'workspace_id',
     'conversation_id',
     'role',
     'content',
@@ -40,6 +42,13 @@ class Message extends Model
 {
     /** @use HasFactory<MessageFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::creating(function (Message $message): void {
+            $message->workspace_id ??= (int) Conversation::query()->whereKey($message->conversation_id)->value('workspace_id');
+        });
+    }
 
     /**
      * @return array<string, string>

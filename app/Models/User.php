@@ -39,6 +39,18 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
+    protected static function booted(): void
+    {
+        // Workspaces where this user is the only member go with them.
+        static::deleting(function (User $user): void {
+            Workspace::query()
+                ->whereHas('members', fn ($query) => $query->whereKey($user->id))
+                ->whereDoesntHave('members', fn ($query) => $query->whereKeyNot($user->id))
+                ->get()
+                ->each(fn (Workspace $workspace) => $workspace->delete());
+        });
+    }
+
     /**
      * Get the attributes that should be cast.
      *

@@ -21,6 +21,7 @@ class DocumentFactory extends Factory
 
         return [
             'user_id' => User::factory(),
+            'workspace_id' => fn (array $attributes): ?int => User::query()->whereKey($attributes['user_id'])->first()?->currentWorkspace()?->id,
             'title' => fake()->sentence(3),
             'original_filename' => $filename,
             'storage_path' => 'documents/'.fake()->uuid().'.txt',

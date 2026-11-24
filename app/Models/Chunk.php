@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
+ * @property int $workspace_id
  * @property int $document_id
  * @property int $page_number
  * @property int $chunk_index
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property-read Document $document
  */
 #[Fillable([
+    'workspace_id',
     'document_id',
     'page_number',
     'chunk_index',
@@ -35,6 +37,14 @@ class Chunk extends Model
 {
     /** @use HasFactory<ChunkFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        // A chunk always lives in its document's workspace.
+        static::creating(function (Chunk $chunk): void {
+            $chunk->workspace_id ??= (int) Document::query()->whereKey($chunk->document_id)->value('workspace_id');
+        });
+    }
 
     /**
      * @return array<string, string>

@@ -13,17 +13,37 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $user_id
+ * @property int $workspace_id
+ * @property int|null $user_id
  * @property string|null $title
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read User $user
+ * @property-read User|null $user
+ * @property-read Workspace $workspace
  */
-#[Fillable(['user_id', 'title'])]
+#[Fillable(['workspace_id', 'user_id', 'title'])]
 class Conversation extends Model
 {
     /** @use HasFactory<ConversationFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        // Until callers pass a workspace (P6-3): use the creator's current one.
+        static::creating(function (Conversation $model): void {
+            if ($model->getAttribute('workspace_id') === null && $model->user_id !== null) {
+                $model->workspace_id = User::query()->whereKey($model->user_id)->first()?->currentWorkspace()?->id;
+            }
+        });
+    }
+
+    /**
+     * @return BelongsTo<Workspace, $this>
+     */
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(Workspace::class);
+    }
 
     /**
      * @return BelongsTo<User, $this>
