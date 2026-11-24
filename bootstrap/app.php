@@ -3,6 +3,7 @@
 use App\Http\Middleware\AuthenticateApiKey;
 use App\Http\Middleware\ForgetCurrentWorkspace;
 use App\Http\Middleware\RequireApiAbility;
+use App\Http\Middleware\ResolveApiWorkspace;
 use App\Support\Api\ApiError;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -27,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'api.key' => AuthenticateApiKey::class,
             'api.ability' => RequireApiAbility::class,
+            'api.workspace' => ResolveApiWorkspace::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

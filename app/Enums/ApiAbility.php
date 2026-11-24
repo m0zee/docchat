@@ -30,4 +30,15 @@ enum ApiAbility: string
     {
         return [self::Ask, self::DocumentsRead, self::DocumentsWrite, self::EvalsRun];
     }
+
+    /**
+     * Abilities of a platform service key for shared bots. It acts in the
+     * workspace of the chat named in the X-DocChat-Link header.
+     *
+     * @return list<self>
+     */
+    public static function forServiceKeys(): array
+    {
+        return [self::Ask, self::DocumentsRead, self::DocumentsWrite, self::ChannelsLink];
+    }
 }
