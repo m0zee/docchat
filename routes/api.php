@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AskController;
 use App\Http\Controllers\Api\AskStreamController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\EvalController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,5 +25,10 @@ Route::prefix('v1')->name('api.')->middleware('api.key')->group(function () {
     Route::middleware('api.ability:documents:write')->group(function () {
         Route::post('documents', [DocumentController::class, 'store'])->name('documents.store');
         Route::delete('documents/{document}', [DocumentController::class, 'destroy'])->whereNumber('document')->name('documents.destroy');
+    });
+
+    Route::middleware('api.ability:evals:run')->group(function () {
+        Route::post('evals/run', [EvalController::class, 'store'])->name('evals.run');
+        Route::get('evals/{evalRun}', [EvalController::class, 'show'])->whereNumber('evalRun')->name('evals.show');
     });
 });

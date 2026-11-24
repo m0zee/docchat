@@ -47,23 +47,11 @@ class SendWebhookJob implements ShouldQueue
         }
 
         $timestamp = time();
-        $body = (string) json_encode([
-            'id' => $this->deliveryId,
-            'event' => $this->event,
-            'timestamp' => $timestamp,
-            'workspace_id' => $webhook->workspace_id,
-            'data' => $this->data,
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        $body = WebhookSigner::envelope((string) $this->deliveryId, $this->event, $timestamp, $webhook->workspace_id, $this->data);
 
         try {
             $response = Http::timeout(10)
-                ->withHeaders([
-                    'User-Agent' => 'DocChat-Webhooks/1.0',
-                    'X-DocChat-Event' => $this->event,
-                    'X-DocChat-Delivery' => (string) $this->deliveryId,
-                    'X-DocChat-Timestamp' => (string) $timestamp,
-                    'X-DocChat-Signature' => WebhookSigner::sign($body, $webhook->secret),
-                ])
+                ->withHeaders(WebhookSigner::headers((string) $this->deliveryId, $this->event, $timestamp, $body, $webhook->secret))
                 ->withBody($body, 'application/json')
                 ->post($webhook->url);
         } catch (Throwable $exception) {
