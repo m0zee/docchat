@@ -20,6 +20,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::livewire('workspace', 'pages::workspace.general')->name('workspace.general');
     Route::livewire('workspace/members', 'pages::workspace.members')->name('workspace.members');
+    Route::livewire('workspace/api-keys', 'pages::workspace.api-keys')->name('workspace.api-keys');
 });
 
 require __DIR__.'/settings.php';

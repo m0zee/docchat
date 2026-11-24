@@ -38,6 +38,11 @@ return [
         ],
     ],
 
+    'api' => [
+        'rate_limit_per_minute' => (int) env('DOCCHAT_API_RATE_LIMIT_PER_MINUTE', 60),
+        'public_rate_limit_per_minute' => (int) env('DOCCHAT_API_PUBLIC_RATE_LIMIT_PER_MINUTE', 10),
+    ],
+
     // Owner-only pages in Workspace settings: route name => label.
     'workspace_nav' => [
         'workspace.members' => 'Members',
