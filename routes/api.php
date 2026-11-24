@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AskController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
@@ -8,6 +9,10 @@ use Illuminate\Support\Facades\Route;
 // key's workspace. Model ids are looked up inside that workspace.
 Route::prefix('v1')->name('api.')->middleware('api.key')->group(function () {
     Route::get('workspace', WorkspaceController::class)->name('workspace');
+
+    Route::middleware('api.ability:ask')->group(function () {
+        Route::post('ask', AskController::class)->name('ask');
+    });
 
     Route::middleware('api.ability:documents:read')->group(function () {
         Route::get('documents', [DocumentController::class, 'index'])->name('documents.index');
