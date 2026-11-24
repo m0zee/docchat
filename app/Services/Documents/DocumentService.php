@@ -8,6 +8,7 @@ use App\Jobs\IngestDocumentJob;
 use App\Models\Document;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Cache\AnswerCache;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,7 @@ class DocumentService
         DB::transaction(function () use ($document): void {
             $document->chunks()->delete();
             $document->delete();
+            AnswerCache::invalidate($document->workspace_id);
         });
     }
 

@@ -2,6 +2,7 @@
 
 use App\Contracts\EmbeddingProvider;
 use App\Exceptions\EmbeddingException;
+use App\Services\Embedding\CachingEmbeddingProvider;
 use App\Services\Embedding\GeminiEmbeddingProvider;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\Request;
@@ -133,7 +134,11 @@ it('prefixes query embeddings for retrieval', function () {
 });
 
 it('binds the configured embedding driver', function () {
+    config(['docchat.cache.query_embeddings' => false]);
     expect(app(EmbeddingProvider::class))->toBeInstanceOf(GeminiEmbeddingProvider::class);
+
+    config(['docchat.cache.query_embeddings' => true]);
+    expect(app(EmbeddingProvider::class))->toBeInstanceOf(CachingEmbeddingProvider::class);
 
     config(['docchat.embedding.driver' => 'unknown']);
 

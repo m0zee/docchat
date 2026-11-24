@@ -57,6 +57,16 @@ return [
         'history_messages' => (int) env('DOCCHAT_RAG_HISTORY_MESSAGES', 4),
     ],
 
+    // Token-saving caches. Answers are cached per workspace for the first
+    // question of a conversation and dropped when documents change.
+    'cache' => [
+        'answers' => (bool) env('DOCCHAT_ANSWER_CACHE', true),
+        'semantic_threshold' => (float) env('DOCCHAT_ANSWER_CACHE_SIMILARITY', 0.95),
+        'ttl_days' => (int) env('DOCCHAT_ANSWER_CACHE_TTL_DAYS', 7),
+        'query_embeddings' => (bool) env('DOCCHAT_QUERY_EMBEDDING_CACHE', true),
+        'embedding_ttl_days' => (int) env('DOCCHAT_QUERY_EMBEDDING_CACHE_TTL_DAYS', 30),
+    ],
+
     'evals' => [
         'delay_seconds' => (float) env('DOCCHAT_EVAL_DELAY_SECONDS', 8),
     ],

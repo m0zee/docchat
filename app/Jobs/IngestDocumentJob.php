@@ -7,6 +7,7 @@ use App\Enums\DocumentStatus;
 use App\Exceptions\DocumentParsingException;
 use App\Exceptions\EmbeddingException;
 use App\Models\Document;
+use App\Services\Cache\AnswerCache;
 use App\Services\Ingestion\Chunker;
 use App\Services\Ingestion\DocumentParser;
 use App\Services\Usage\UsageRecorder;
@@ -121,6 +122,8 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
                     'error' => null,
                 ]);
             });
+
+            AnswerCache::invalidate($document->workspace_id);
 
             $usage->ingest(
                 $document,

@@ -395,6 +395,9 @@ new #[Title('Chat')] class extends Component {
                                         {{ $message->usage_estimated ? '~' : '' }}{{ number_format($message->prompt_tokens + (int) $message->completion_tokens) }} {{ __('tokens') }} ·
                                     @endif
                                     {{ number_format(($message->latency_ms ?? 0) / 1000, 1) }} s
+                                    @if ($message->cache_hit)
+                                        · <span data-test="from-cache">{{ __('from cache') }}</span>
+                                    @endif
                                 </flux:text>
                             </div>
                         </div>

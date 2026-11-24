@@ -6,6 +6,7 @@ use App\Contracts\ChatProvider;
 use App\Contracts\EmbeddingProvider;
 use App\Services\Chat\GroqChatProvider;
 use App\Services\Chat\OpenRouterChatProvider;
+use App\Services\Embedding\CachingEmbeddingProvider;
 use App\Services\Embedding\GeminiEmbeddingProvider;
 use App\Support\CurrentWorkspace;
 use Illuminate\Support\ServiceProvider;
@@ -21,12 +22,16 @@ class DocChatServiceProvider extends ServiceProvider
         $this->app->bind(EmbeddingProvider::class, function (): EmbeddingProvider {
             $driver = (string) config('docchat.embedding.driver');
 
-            return match ($driver) {
+            $provider = match ($driver) {
                 'gemini' => $this->app->make(GeminiEmbeddingProvider::class),
                 default => throw new InvalidArgumentException(
                     'Unsupported embedding driver ['.$driver.'].',
                 ),
             };
+
+            return config('docchat.cache.query_embeddings')
+                ? new CachingEmbeddingProvider($provider)
+                : $provider;
         });
 
         $this->app->bind(ChatProvider::class, function (): ChatProvider {

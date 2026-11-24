@@ -12,9 +12,12 @@ use Livewire\Component;
 new #[Title('Workspace')] class extends Component {
     public string $name = '';
 
+    public bool $answerCache = true;
+
     public function mount(): void
     {
         $this->name = $this->workspace->name;
+        $this->answerCache = $this->workspace->setting('answer_cache', true) !== false;
     }
 
     public function save(): void
@@ -23,9 +26,12 @@ new #[Title('Workspace')] class extends Component {
 
         $this->validate(['name' => ['required', 'string', 'max:80']]);
 
-        $this->workspace->update(['name' => trim($this->name)]);
+        $this->workspace->update([
+            'name' => trim($this->name),
+            'settings' => array_merge($this->workspace->settings ?? [], ['answer_cache' => $this->answerCache]),
+        ]);
 
-        Flux::toast(variant: 'success', text: __('Workspace renamed.'));
+        Flux::toast(variant: 'success', text: __('Workspace saved.'));
     }
 
     public function leave(): void
@@ -67,6 +73,8 @@ new #[Title('Workspace')] class extends Component {
 <x-pages::workspace.layout :heading="__('General')" :subheading="__('The name your team and API clients see.')">
     <form wire:submit="save" class="w-full space-y-6">
         <flux:input wire:model="name" :label="__('Workspace name')" :disabled="! $this->isOwner" required maxlength="80" />
+
+        <flux:switch wire:model="answerCache" :disabled="! $this->isOwner" :label="__('Answer repeated questions from the cache')" :description="__('Saves tokens when people ask the same thing, for example on the website widget. Cached answers are dropped whenever documents change.')" />
 
         <flux:text>{{ __('Your role: :role', ['role' => __(ucfirst((string) $this->workspace->roleOf(auth()->user())?->value))]) }}</flux:text>
 

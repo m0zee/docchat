@@ -19,6 +19,7 @@ use Illuminate\Support\Str;
  * @property string $name
  * @property string $slug
  * @property array<string, mixed>|null $settings
+ * @property int $corpus_version
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
