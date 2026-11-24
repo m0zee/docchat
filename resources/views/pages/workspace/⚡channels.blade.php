@@ -58,6 +58,8 @@ new #[Title('Chat apps')] class extends Component {
     {
         return array_values(array_filter([
             filled(config('docchat.channels.telegram.bot_username')) ? ConversationChannel::Telegram : null,
+            filled(config('docchat.channels.whatsapp.number')) ? ConversationChannel::WhatsApp : null,
+            filled(config('docchat.channels.discord.application_id')) ? ConversationChannel::Discord : null,
         ]));
     }
 
@@ -66,6 +68,18 @@ new #[Title('Chat apps')] class extends Component {
         $bot = ltrim((string) config('docchat.channels.telegram.bot_username'), '@');
 
         return $this->code === null || $bot === '' ? null : 'https://t.me/'.$bot.'?start='.$this->code;
+    }
+
+    public function whatsAppUrl(): ?string
+    {
+        $number = preg_replace('/\D/', '', (string) config('docchat.channels.whatsapp.number'));
+
+        return $this->code === null || $number === '' ? null : 'https://wa.me/'.$number.'?text='.rawurlencode('link '.$this->code);
+    }
+
+    public function discordInviteUrl(): string
+    {
+        return 'https://discord.com/oauth2/authorize?client_id='.rawurlencode((string) config('docchat.channels.discord.application_id')).'&scope=applications.commands';
     }
 
     #[Computed]
@@ -97,6 +111,18 @@ new #[Title('Chat apps')] class extends Component {
                             <flux:button :href="$this->telegramUrl()" target="_blank" variant="primary" icon="arrow-top-right-on-square">{{ __('Open Telegram') }}</flux:button>
                             <code class="break-all text-sm" data-test="link-code">/start {{ $code }}</code>
                         </div>
+                    @elseif ($channel === \App\Enums\ConversationChannel::WhatsApp)
+                        <flux:text>{{ __('Open this link on the phone with the WhatsApp chat and send the prepared message, or send it by hand to the business number.') }}</flux:text>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <flux:button :href="$this->whatsAppUrl()" target="_blank" variant="primary" icon="arrow-top-right-on-square">{{ __('Open WhatsApp') }}</flux:button>
+                            <code class="break-all text-sm" data-test="link-code">link {{ $code }}</code>
+                        </div>
+                    @elseif ($channel === \App\Enums\ConversationChannel::Discord)
+                        <flux:text>{{ __('Add DocChat to your server, then someone with Manage Server runs this command in any channel:') }}</flux:text>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <flux:button :href="$this->discordInviteUrl()" target="_blank" icon="arrow-top-right-on-square">{{ __('Add to Discord') }}</flux:button>
+                            <code class="break-all text-sm" data-test="link-code">/link code: {{ $code }}</code>
+                        </div>
                     @endif
                     <flux:text class="text-xs">{{ __('The code works once and expires at :time.', ['time' => \Illuminate\Support\Carbon::parse($codeExpiresAt)->format('H:i')]) }}</flux:text>
                 @else
@@ -104,7 +130,7 @@ new #[Title('Chat apps')] class extends Component {
                 @endif
             </div>
         @empty
-            <flux:callout icon="information-circle" :text="__('No chat bot is set up on this server yet. The server admin sets TELEGRAM_BOT_USERNAME after creating the bot (see n8n/README.md).')" />
+            <flux:callout icon="information-circle" :text="__('No chat bot is set up on this server yet. The server admin sets TELEGRAM_BOT_USERNAME, WHATSAPP_NUMBER or DISCORD_APPLICATION_ID after creating the bot (see n8n/README.md and docs/discord.md).')" />
         @endforelse
 
         <div class="space-y-2">
