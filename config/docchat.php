@@ -43,6 +43,10 @@ return [
         'history_messages' => (int) env('DOCCHAT_RAG_HISTORY_MESSAGES', 4),
     ],
 
+    'evals' => [
+        'delay_seconds' => (float) env('DOCCHAT_EVAL_DELAY_SECONDS', 8),
+    ],
+
     'ingestion' => [
         'chunk_tokens' => (int) env('DOCCHAT_CHUNK_TOKENS', 800),
         'chunk_overlap' => (float) env('DOCCHAT_CHUNK_OVERLAP', 0.15),
