@@ -77,14 +77,8 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
-     * @return HasMany<Document, $this>
-     */
-    public function documents(): HasMany
-    {
-        return $this->hasMany(Document::class);
-    }
-
-    /**
+     * Conversations this user started, in any workspace.
+     *
      * @return HasMany<Conversation, $this>
      */
     public function conversations(): HasMany

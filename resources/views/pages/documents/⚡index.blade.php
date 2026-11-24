@@ -3,6 +3,8 @@
 use App\Enums\DocumentStatus;
 use App\Models\Document;
 use App\Models\User;
+use App\Models\Workspace;
+use App\Support\CurrentWorkspace;
 use App\Rules\DocumentUpload;
 use App\Services\Documents\DocumentService;
 use App\Support\FileSize;
@@ -38,8 +40,11 @@ new #[Title('Documents')] class extends Component {
             return;
         }
 
+        $workspace = $this->workspace();
+        Gate::authorize('create', [Document::class, $workspace]);
+
         try {
-            $service->createFromUpload($this->file, $user);
+            $service->createFromUpload($this->file, $workspace, $user);
         } catch (Throwable $exception) {
             report($exception);
             $this->addError('file', __('The document could not be uploaded. Please try again.'));
@@ -54,7 +59,7 @@ new #[Title('Documents')] class extends Component {
 
     public function delete(int $documentId, DocumentService $service): void
     {
-        $document = Document::findOrFail($documentId);
+        $document = Document::query()->inWorkspace($this->workspace())->findOrFail($documentId);
 
         Gate::authorize('delete', $document);
 
@@ -69,13 +74,12 @@ new #[Title('Documents')] class extends Component {
     #[Computed]
     public function documents(): Collection
     {
-        $user = Auth::user();
+        return Document::query()->inWorkspace($this->workspace())->withCount('chunks')->latest()->get();
+    }
 
-        if (! $user instanceof User) {
-            return new Collection();
-        }
-
-        return $user->documents()->withCount('chunks')->latest()->get();
+    private function workspace(): Workspace
+    {
+        return app(CurrentWorkspace::class)->require();
     }
 
     #[Computed]

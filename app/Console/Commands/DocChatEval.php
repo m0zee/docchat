@@ -6,7 +6,9 @@ use App\Enums\DocumentStatus;
 use App\Evals\EvalCase;
 use App\Evals\EvalFile;
 use App\Evals\EvalRunner;
+use App\Models\Document;
 use App\Models\User;
+use App\Models\Workspace;
 use Database\Seeders\SampleDocumentSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
@@ -17,7 +19,8 @@ class DocChatEval extends Command
 {
     protected $signature = 'docchat:eval
         {file : Path to a JSON eval file, for example evals/sample.json}
-        {--user= : Email or id of the user whose documents are searched (default: the demo user)}
+        {--workspace= : Id or slug of the workspace whose documents are searched}
+        {--user= : Email or id of a user; their current workspace is searched (default: the demo user)}
         {--documents=* : Limit the search to these document ids (default: all ready documents)}
         {--delay= : Seconds to wait between chat calls (default: docchat.evals.delay_seconds)}
         {--sweep= : Comma-separated thresholds; runs retrieval only, with no chat calls}';
@@ -34,37 +37,37 @@ class DocChatEval extends Command
             return self::FAILURE;
         }
 
-        $user = $this->resolveUser();
+        $workspace = $this->resolveWorkspace();
 
-        if ($user === null) {
+        if ($workspace === null) {
             return self::FAILURE;
         }
 
-        $documentIds = $this->documentIds($user);
+        $documentIds = $this->documentIds($workspace);
 
         if ($documentIds === []) {
-            $this->components->error('None of the --documents ids belong to '.$user->email.'.');
+            $this->components->error('None of the --documents ids belong to workspace '.$workspace->name.'.');
 
             return self::FAILURE;
         }
 
-        if (! $user->documents()->where('status', DocumentStatus::Ready)->exists()) {
-            $this->components->error('User '.$user->email.' has no ready documents. Upload one, or run: php artisan db:seed --class=SampleDocumentSeeder');
+        if (! Document::query()->inWorkspace($workspace)->where('status', DocumentStatus::Ready)->exists()) {
+            $this->components->error('Workspace '.$workspace->name.' has no ready documents. Upload one, or run: php artisan db:seed --class=SampleDocumentSeeder');
 
             return self::FAILURE;
         }
 
         if (is_string($this->option('sweep')) && $this->option('sweep') !== '') {
-            return $this->sweep($runner, $user, $cases, $documentIds);
+            return $this->sweep($runner, $workspace, $cases, $documentIds);
         }
 
         $delay = $this->option('delay') !== null
             ? max(0.0, (float) $this->option('delay'))
             : (float) config('docchat.evals.delay_seconds');
 
-        $this->components->info(sprintf('Running %d cases for %s (delay %ss between chat calls)', count($cases), $user->email, $delay));
+        $this->components->info(sprintf('Running %d cases for %s (delay %ss between chat calls)', count($cases), $workspace->name, $delay));
 
-        $report = $runner->run($user, $cases, $documentIds, $delay, function (int $index, array $result) use ($cases): void {
+        $report = $runner->run($workspace, $cases, $documentIds, $delay, function (int $index, array $result) use ($cases): void {
             $status = match (true) {
                 $result['error'] !== null => '<fg=red>error</>',
                 $result['should_refuse'] => $result['refused'] ? '<fg=green>refused</>' : '<fg=red>answered</>',
@@ -112,7 +115,7 @@ class DocChatEval extends Command
      * @param  list<EvalCase>  $cases
      * @param  list<int>|null  $documentIds
      */
-    private function sweep(EvalRunner $runner, User $user, array $cases, ?array $documentIds): int
+    private function sweep(EvalRunner $runner, Workspace $workspace, array $cases, ?array $documentIds): int
     {
         $thresholds = array_values(array_filter(array_map(
             fn (string $value): ?float => is_numeric(trim($value)) ? (float) trim($value) : null,
@@ -125,7 +128,7 @@ class DocChatEval extends Command
             return self::FAILURE;
         }
 
-        $rows = $runner->sweep($user, $cases, $thresholds, $documentIds);
+        $rows = $runner->sweep($workspace, $cases, $thresholds, $documentIds);
 
         $this->table(
             ['Threshold', 'Hit rate', 'Correct refusals', 'Wrong refusals'],
@@ -164,6 +167,37 @@ class DocChatEval extends Command
         return is_file($file) ? $file : base_path($file);
     }
 
+    private function resolveWorkspace(): ?Workspace
+    {
+        $option = $this->option('workspace');
+
+        if (is_string($option) && $option !== '') {
+            $workspace = ctype_digit($option)
+                ? Workspace::query()->find((int) $option)
+                : Workspace::query()->where('slug', $option)->first();
+
+            if ($workspace === null) {
+                $this->components->error("Workspace [{$option}] not found.");
+            }
+
+            return $workspace;
+        }
+
+        $user = $this->resolveUser();
+
+        if ($user === null) {
+            return null;
+        }
+
+        $workspace = $user->currentWorkspace();
+
+        if ($workspace === null) {
+            $this->components->error('User '.$user->email.' has no workspace.');
+        }
+
+        return $workspace;
+    }
+
     private function resolveUser(): ?User
     {
         $option = $this->option('user');
@@ -183,7 +217,7 @@ class DocChatEval extends Command
     /**
      * @return list<int>|null
      */
-    private function documentIds(User $user): ?array
+    private function documentIds(Workspace $workspace): ?array
     {
         $ids = array_map('intval', (array) $this->option('documents'));
 
@@ -191,8 +225,8 @@ class DocChatEval extends Command
             return null;
         }
 
-        // Only the user's own documents, whatever ids are passed.
-        return array_values($user->documents()->whereIn('id', $ids)->pluck('id')->map(fn ($id): int => (int) $id)->all());
+        // Only the workspace's documents, whatever ids are passed.
+        return array_values(Document::query()->inWorkspace($workspace)->whereIn('id', $ids)->pluck('id')->map(fn ($id): int => (int) $id)->all());
     }
 
     private static function percent(?float $value): string

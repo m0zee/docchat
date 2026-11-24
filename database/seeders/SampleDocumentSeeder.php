@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Document;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Documents\DocumentService;
@@ -31,11 +32,9 @@ class SampleDocumentSeeder extends Seeder
 
         $user->forceFill(['email_verified_at' => $user->email_verified_at ?? now()])->save();
 
-        if ($user->currentWorkspace() === null) {
-            Workspace::createFor($user, 'Demo workspace');
-        }
+        $workspace = $user->currentWorkspace() ?? Workspace::createFor($user, 'Demo workspace');
 
-        if ($user->documents()->where('original_filename', self::FILE)->exists()) {
+        if (Document::query()->inWorkspace($workspace)->where('original_filename', self::FILE)->exists()) {
             $this->command?->info('The sample document is already uploaded for '.self::EMAIL.'.');
 
             return;
@@ -49,7 +48,7 @@ class SampleDocumentSeeder extends Seeder
             true,
         );
 
-        $documents->createFromUpload($file, $user);
+        $documents->createFromUpload($file, $workspace, $user);
 
         $this->command?->info('Uploaded the sample for '.self::EMAIL.' (password: '.self::PASSWORD.'). Ingestion runs on the queue.');
     }

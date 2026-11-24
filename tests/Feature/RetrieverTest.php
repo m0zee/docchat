@@ -31,7 +31,7 @@ it('returns chunks ordered by similarity and capped at top_k', function () {
         chunkAt($document, $similarity, $index, page: $index + 1);
     }
 
-    $results = app(Retriever::class)->retrieve($this->user, 'question');
+    $results = app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'question');
 
     expect($results)->toHaveCount(5)
         ->and(array_map(fn ($chunk) => round($chunk->similarity, 2), $results))->toBe([0.95, 0.9, 0.85, 0.8, 0.75])
@@ -45,13 +45,13 @@ it('drops chunks under the similarity threshold', function () {
     chunkAt($document, 0.55, 1);
     chunkAt($document, 0.3, 2);
 
-    expect(app(Retriever::class)->retrieve($this->user, 'q'))->toHaveCount(2);
+    expect(app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'q'))->toHaveCount(2);
 
     config(['docchat.rag.similarity_threshold' => 0.8]);
-    expect(app(Retriever::class)->retrieve($this->user, 'q'))->toHaveCount(1);
+    expect(app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'q'))->toHaveCount(1);
 
     config(['docchat.rag.similarity_threshold' => 0.95]);
-    expect(app(Retriever::class)->retrieve($this->user, 'q'))->toBe([]);
+    expect(app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'q'))->toBe([]);
 });
 
 it('never returns another user\'s chunks, even when asked for their document', function () {
@@ -61,8 +61,8 @@ it('never returns another user\'s chunks, even when asked for their document', f
     $theirs = Document::factory()->ready()->create();
     $closest = chunkAt($theirs, 0.99, 1);
 
-    $all = app(Retriever::class)->retrieve($this->user, 'q');
-    $forged = app(Retriever::class)->retrieve($this->user, 'q', [$theirs->id]);
+    $all = app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'q');
+    $forged = app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'q', [$theirs->id]);
 
     expect(array_map(fn ($chunk) => $chunk->chunkId, $all))->not->toContain($closest->id)
         ->and($all)->toHaveCount(1)
@@ -75,7 +75,7 @@ it('skips documents that are not ready', function () {
         chunkAt($document, 0.9, $index);
     }
 
-    expect(app(Retriever::class)->retrieve($this->user, 'q'))->toBe([]);
+    expect(app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'q'))->toBe([]);
 });
 
 it('limits the search to the chosen documents', function () {
@@ -84,7 +84,7 @@ it('limits the search to the chosen documents', function () {
     chunkAt($first, 0.9, 0);
     $wanted = chunkAt($second, 0.7, 1);
 
-    $results = app(Retriever::class)->retrieve($this->user, 'q', [$second->id]);
+    $results = app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'q', [$second->id]);
 
     expect($results)->toHaveCount(1)
         ->and($results[0]->chunkId)->toBe($wanted->id)
@@ -95,7 +95,7 @@ it('embeds the question once with the query embedding', function () {
     $fake = new FakeEmbeddingProvider;
     $this->app->instance(EmbeddingProvider::class, $fake);
 
-    app(Retriever::class)->retrieve($this->user, 'What is DocChat?');
+    app(Retriever::class)->retrieve($this->user->currentWorkspace(), 'What is DocChat?');
 
     expect($fake->queries)->toBe(['What is DocChat?']);
 });

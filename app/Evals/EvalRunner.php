@@ -3,7 +3,7 @@
 namespace App\Evals;
 
 use App\Contracts\EmbeddingProvider;
-use App\Models\User;
+use App\Models\Workspace;
 use App\Services\Rag\AnswerService;
 use App\Services\Rag\PromptBuilder;
 use App\Services\Rag\RetrievedChunk;
@@ -30,7 +30,7 @@ class EvalRunner
      * @param  (callable(int, array<string, mixed>): void)|null  $onResult
      * @return array{config: array<string, mixed>, cases: list<array<string, mixed>>, summary: array<string, mixed>}
      */
-    public function run(User $user, array $cases, ?array $documentIds, float $delaySeconds, ?callable $onResult = null): array
+    public function run(Workspace $workspace, array $cases, ?array $documentIds, float $delaySeconds, ?callable $onResult = null): array
     {
         $results = [];
         $modelCalled = false;
@@ -41,7 +41,7 @@ class EvalRunner
                 Sleep::for((int) round($delaySeconds * 1000))->milliseconds();
             }
 
-            $conversation = $user->conversations()->create(['title' => 'eval: '.Str::limit($case->question, 60)]);
+            $conversation = $workspace->conversations()->create(['title' => 'eval: '.Str::limit($case->question, 60)]);
 
             if ($documentIds !== null) {
                 $conversation->documents()->sync($documentIds);
@@ -101,7 +101,7 @@ class EvalRunner
      * @param  list<int>|null  $documentIds
      * @return list<array{threshold: float, hit_rate: float|null, correct_refusal_rate: float|null, false_refusal_rate: float|null}>
      */
-    public function sweep(User $user, array $cases, array $thresholds, ?array $documentIds): array
+    public function sweep(Workspace $workspace, array $cases, array $thresholds, ?array $documentIds): array
     {
         $vectors = array_map(fn (EvalCase $case): array => $this->embeddings->embedQuery($case->question), $cases);
         $rows = [];
@@ -110,7 +110,7 @@ class EvalRunner
             $hits = $answerable = $refusedWhenShould = $shouldRefuse = $falseRefusals = 0;
 
             foreach ($cases as $index => $case) {
-                $retrieved = $this->retriever->search($user, $vectors[$index], $documentIds, $threshold);
+                $retrieved = $this->retriever->search($workspace, $vectors[$index], $documentIds, $threshold);
 
                 if ($case->shouldRefuse) {
                     $shouldRefuse++;

@@ -6,6 +6,7 @@ use App\Enums\DocumentStatus;
 use App\Jobs\IngestDocumentJob;
 use App\Models\Document;
 use App\Models\User;
+use App\Models\Workspace;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -14,11 +15,11 @@ use RuntimeException;
 
 class DocumentService
 {
-    public function createFromUpload(UploadedFile $file, User $user): Document
+    public function createFromUpload(UploadedFile $file, Workspace $workspace, ?User $user = null): Document
     {
         $extension = strtolower($file->getClientOriginalExtension());
         $filename = Str::uuid().'.'.$extension;
-        $storagePath = $file->storeAs('documents/'.$user->id, $filename, 'local');
+        $storagePath = $file->storeAs('documents/'.$workspace->id, $filename, 'local');
 
         if ($storagePath === false) {
             throw new RuntimeException('The uploaded file could not be stored.');
@@ -27,7 +28,8 @@ class DocumentService
         $title = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME) ?: 'Untitled';
 
         $document = Document::create([
-            'user_id' => $user->id,
+            'workspace_id' => $workspace->id,
+            'user_id' => $user?->id,
             'title' => Str::limit($title, 255, ''),
             'original_filename' => $file->getClientOriginalName(),
             'storage_path' => $storagePath,

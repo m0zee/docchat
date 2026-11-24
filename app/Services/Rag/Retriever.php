@@ -5,7 +5,7 @@ namespace App\Services\Rag;
 use App\Contracts\EmbeddingProvider;
 use App\Enums\DocumentStatus;
 use App\Models\Chunk;
-use App\Models\User;
+use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 
 class Retriever
@@ -13,18 +13,18 @@ class Retriever
     public function __construct(private EmbeddingProvider $embeddings) {}
 
     /**
-     * Find the user's chunks closest to the question, best first.
+     * Find the workspace's chunks closest to the question, best first.
      *
-     * @param  list<int>|null  $documentIds  null searches all of the user's ready documents
+     * @param  list<int>|null  $documentIds  null searches all of the workspace's ready documents
      * @return list<RetrievedChunk>
      */
-    public function retrieve(User $user, string $question, ?array $documentIds = null): array
+    public function retrieve(Workspace $workspace, string $question, ?array $documentIds = null): array
     {
         if ($documentIds === []) {
             return [];
         }
 
-        return $this->search($user, $this->embeddings->embedQuery($question), $documentIds);
+        return $this->search($workspace, $this->embeddings->embedQuery($question), $documentIds);
     }
 
     /**
@@ -34,21 +34,24 @@ class Retriever
      * @param  list<int>|null  $documentIds
      * @return list<RetrievedChunk>
      */
-    public function search(User $user, array $vector, ?array $documentIds = null, ?float $threshold = null): array
+    public function search(Workspace $workspace, array $vector, ?array $documentIds = null, ?float $threshold = null): array
     {
         $topK = max(1, (int) config('docchat.rag.top_k'));
         $threshold ??= (float) config('docchat.rag.similarity_threshold');
 
-        $rows = DB::transaction(function () use ($user, $vector, $documentIds, $topK, $threshold) {
+        $rows = DB::transaction(function () use ($workspace, $vector, $documentIds, $topK, $threshold) {
             // A filtered HNSW scan can stop before it finds top_k matching rows.
             // pgvector 0.8 iterative scans keep walking the index until it does.
             if (DB::connection()->getDriverName() === 'pgsql') {
                 DB::statement('SET LOCAL hnsw.iterative_scan = relaxed_order');
             }
 
+            // Filter the workspace explicitly on both tables: this must hold
+            // in queue jobs and commands too, where no global scope applies.
             return Chunk::query()
-                ->ownedBy($user)
+                ->inWorkspace($workspace)
                 ->join('documents', 'documents.id', '=', 'chunks.document_id')
+                ->where('documents.workspace_id', $workspace->id)
                 ->where('documents.status', DocumentStatus::Ready->value)
                 ->when($documentIds !== null, fn ($query) => $query->whereIn('chunks.document_id', $documentIds))
                 ->select([

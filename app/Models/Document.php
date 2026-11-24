@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\DocumentStatus;
+use App\Models\Concerns\BelongsToWorkspace;
 use Database\Factories\DocumentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,6 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $workspace_id
  * @property int|null $user_id
  * @property string $title
  * @property string $original_filename
@@ -28,7 +28,6 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read int $chunks_count
  * @property-read User|null $user
- * @property-read Workspace $workspace
  */
 #[Fillable([
     'workspace_id',
@@ -46,7 +45,7 @@ use Illuminate\Support\Carbon;
 class Document extends Model
 {
     /** @use HasFactory<DocumentFactory> */
-    use HasFactory;
+    use BelongsToWorkspace, HasFactory;
 
     /**
      * @return array<string, string>
@@ -58,24 +57,6 @@ class Document extends Model
             'page_count' => 'integer',
             'status' => DocumentStatus::class,
         ];
-    }
-
-    protected static function booted(): void
-    {
-        // Until callers pass a workspace (P6-3): use the creator's current one.
-        static::creating(function (Document $model): void {
-            if ($model->getAttribute('workspace_id') === null && $model->user_id !== null) {
-                $model->workspace_id = User::query()->whereKey($model->user_id)->first()?->currentWorkspace()?->id;
-            }
-        });
-    }
-
-    /**
-     * @return BelongsTo<Workspace, $this>
-     */
-    public function workspace(): BelongsTo
-    {
-        return $this->belongsTo(Workspace::class);
     }
 
     /**

@@ -63,7 +63,7 @@ class AnswerService
 
         try {
             $this->lastRetrieved = $this->retriever->retrieve(
-                $conversation->user,
+                $conversation->workspace,
                 $question,
                 $conversation->scopedDocumentIds(),
             );

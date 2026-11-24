@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\MessageRole;
+use App\Models\Concerns\BelongsToWorkspace;
 use Database\Factories\MessageFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,6 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $workspace_id
  * @property int $conversation_id
  * @property MessageRole $role
  * @property string $content
@@ -41,13 +41,16 @@ use Illuminate\Support\Carbon;
 class Message extends Model
 {
     /** @use HasFactory<MessageFactory> */
-    use HasFactory;
+    use BelongsToWorkspace, HasFactory;
 
-    protected static function booted(): void
+    /**
+     * A message always lives in its conversation's workspace.
+     */
+    protected function workspaceIdForNewRow(): ?int
     {
-        static::creating(function (Message $message): void {
-            $message->workspace_id ??= (int) Conversation::query()->whereKey($message->conversation_id)->value('workspace_id');
-        });
+        $id = Conversation::query()->withoutGlobalScopes()->whereKey($this->conversation_id)->value('workspace_id');
+
+        return $id === null ? null : (int) $id;
     }
 
     /**

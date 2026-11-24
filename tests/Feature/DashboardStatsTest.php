@@ -25,7 +25,7 @@ it('shows only the user\'s own counts and recent conversations', function () {
 
     expect($stats[0])->toContain('Ready documents 1')
         ->and($stats[1])->toContain('Chunks indexed 3')
-        ->and($stats[2])->toContain('Conversations 1');
+        ->and($stats[2])->toContain('Your conversations 1');
 
     $response->assertSee('My refund question')->assertDontSee('Someone else');
 });

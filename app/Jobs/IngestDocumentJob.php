@@ -87,6 +87,7 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
 
                 foreach ($chunks as $index => $chunk) {
                     $document->chunks()->create([
+                        'workspace_id' => $document->workspace_id,
                         'page_number' => $chunk->pageNumber,
                         'chunk_index' => $chunk->chunkIndex,
                         'content' => $chunk->content,

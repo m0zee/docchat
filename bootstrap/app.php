@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ForgetCurrentWorkspace;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -16,6 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // host port), so trust the proxy headers it sets: HTTPS scheme and
         // client IP. Without this, Laravel builds http:// URLs behind Caddy.
         $middleware->trustProxies(at: '*');
+
+        $middleware->prepend(ForgetCurrentWorkspace::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
