@@ -19,16 +19,20 @@ return [
     'chat' => [
         'driver' => env('DOCCHAT_CHAT_DRIVER', 'groq'),
         'max_output_tokens' => (int) env('DOCCHAT_CHAT_MAX_OUTPUT_TOKENS', 800),
+        'timeout_seconds' => (int) env('DOCCHAT_CHAT_TIMEOUT_SECONDS', 120),
         'drivers' => [
             'openrouter' => [
                 'model' => env('DOCCHAT_OPENROUTER_MODEL'),
                 'base_url' => env('DOCCHAT_OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
                 'api_key' => env('OPENROUTER_API_KEY'),
+                'referer' => env('DOCCHAT_OPENROUTER_REFERER', env('APP_URL')),
+                'title' => env('DOCCHAT_OPENROUTER_TITLE', env('APP_NAME', 'DocChat')),
             ],
             'groq' => [
                 'model' => env('DOCCHAT_GROQ_MODEL'),
                 'base_url' => env('DOCCHAT_GROQ_BASE_URL', 'https://api.groq.com/openai/v1'),
                 'api_key' => env('GROQ_API_KEY'),
+                'reasoning_effort' => env('DOCCHAT_GROQ_REASONING_EFFORT', 'low'),
             ],
         ],
     ],
