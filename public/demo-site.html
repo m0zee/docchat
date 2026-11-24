@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harbor Point Library</title>
+<!--
+  Sample client website for the DocChat widget demo.
+  1. In DocChat open Workspace > Website widget, save once and copy the
+     public key. This page is served by DocChat itself (APP_URL), which every
+     public key already allows; a copy on another site needs its origin listed.
+  2. Replace dc_pub_REPLACE_ME below with that key.
+  3. Open http://localhost:8000/demo-site.html.
+  Harbor Point is a made-up library (see the sample handbook in database/seeders).
+-->
+<style>
+  :root { --ink: #1f2933; --muted: #52606d; --accent: #0f766e; --bg: #f8fafc; --card: #ffffff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); line-height: 1.6; }
+  header { background: var(--accent); color: #fff; padding: 48px 16px; }
+  header .wrap, main { max-width: 880px; margin: 0 auto; }
+  header h1 { margin: 0 0 8px; font-size: 2rem; }
+  header p { margin: 0; opacity: .9; }
+  main { padding: 32px 16px 96px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card { background: var(--card); border: 1px solid #e4e7eb; border-radius: 12px; padding: 20px; }
+  .card h2 { margin: 0 0 8px; font-size: 1.1rem; }
+  .card p { margin: 0; color: var(--muted); }
+  .hint { margin-top: 32px; padding: 16px; border-left: 4px solid var(--accent); background: #ecfdf5; border-radius: 8px; }
+  footer { text-align: center; color: var(--muted); font-size: .875rem; padding: 24px 16px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Harbor Point Library</h1>
+    <p>Books, films and quiet study rooms by the harbour. Open six days a week.</p>
+  </div>
+</header>
+<main>
+  <div class="grid">
+    <div class="card"><h2>Borrowing</h2><p>Books, DVDs and audiobooks with a free library card.</p></div>
+    <div class="card"><h2>Study rooms</h2><p>Book a room for up to three hours a day.</p></div>
+    <div class="card"><h2>Events</h2><p>Story time, reading groups and computer help.</p></div>
+  </div>
+  <div class="hint">
+    Questions about fees, opening hours or loan periods? Use the chat button in the corner.
+    It answers from the library handbook and shows the page it used.
+  </div>
+</main>
+<footer>A fictional library, made for the DocChat demo.</footer>
+
+<script src="/widget.js" data-key="dc_pub_REPLACE_ME" async></script>
+</body>
+</html>
