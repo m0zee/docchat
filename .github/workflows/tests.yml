@@ -87,3 +87,19 @@ jobs:
           cp .env.production.example .env
           docker compose -f docker-compose.prod.yml config -q
           docker compose -f docker-compose.yml config -q
+
+  n8n-workflows:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Import every workflow into the pinned n8n version
+        run: |
+          image=$(grep -m1 -o 'n8nio/n8n:[0-9.]*' docker-compose.yml)
+          docker run --rm -e N8N_DIAGNOSTICS_ENABLED=false -v "$PWD/n8n:/workflows:ro" "$image" \
+            import:workflow --separate --input=/workflows 2>&1 | tee import.log
+          grep -q "Successfully imported $(ls n8n/*.json | wc -l) workflows" import.log
