@@ -1,0 +1,868 @@
+{
+  "id": "dcWhatsAppBot001",
+  "name": "DocChat: WhatsApp bot",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## DocChat WhatsApp bot\nWhatsApp Business Cloud API (Meta). A chat is linked by sending `link <code>` (code from DocChat > Workspace > Chat apps), then questions go to that workspace with a **service key** and `X-DocChat-Link`.\n\n- `new`, `unlink`, `help`.\n- Files sent to the number are added; the second trigger says when they are ready.\n- Only replies to people who wrote first, inside WhatsApp's 24-hour window. No template messages.\n\nSetup: see `n8n/README.md`.",
+        "width": 500,
+        "height": 380
+      },
+      "id": "7f50c867-0783-5b76-bc30-2c024937328a",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "id": "4894786a-d8c8-59b6-a931-ff4606a9a0a5",
+      "name": "WhatsApp",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "c7557a8f-7749-5415-b301-c5dc234a3969"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Decides what to do with each incoming WhatsApp message.\n// Status updates (sent, delivered, read) are ignored.\nconst value = $json;\nconst message = (value.messages || [])[0];\nif (!message) return { json: { route: 'ignore' } };\n\nconst text = String(message.text?.body || message.document?.caption || '').trim();\nconst [first = '', ...rest] = text.split(/\\s+/);\nconst word = first.toLowerCase().replace(/^\\//, '');\n\nlet route = 'ask';\nif (message.type === 'document') route = 'document';\nelse if (message.type !== 'text') route = 'unsupported';\nelse if (word === 'link' && rest[0]) route = 'link';\nelse if (word === 'help' || word === 'start') route = 'help';\nelse if (word === 'new' && rest.length === 0) route = 'new';\nelse if (word === 'unlink' && rest.length === 0) route = 'unlink';\n\nreturn {\n  json: {\n    route,\n    wa_id: String(message.from),\n    phone_number_id: String(value.metadata?.phone_number_id || ''),\n    link: `whatsapp:${message.from}`,\n    code: rest[0] || null,\n    question: text,\n    label: value.contacts?.[0]?.profile?.name || String(message.from),\n    media_id: message.document?.id || null,\n    file_name: message.document?.filename || 'document',\n  },\n};"
+      },
+      "id": "0f9ba14e-2d3a-5c29-b8ff-0064d5c771e7",
+      "name": "Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "19c18c09-a4ac-59c2-af06-a6acc6d8ff82",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "link",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "link"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "eedf8697-d47a-5b0d-bdd5-41e8aedd3ca0",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "help"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c9a842d9-84f5-5937-8429-c2f5d3b03571",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "new",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "new"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "21a87cbd-4868-5efb-b745-bfd0426d35fa",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "unlink",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unlink"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c72acfe8-547b-513d-956e-ec03da1e0c2f",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "document",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "document"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2ac3e5c6-211e-54c5-8f70-a972024bbfbd",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "ask",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ask"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8bf6bb54-5bac-5321-a9af-425578137ea7",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "unsupported",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unsupported"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "df50a75d-08b1-5902-860e-40d8530c7dcc",
+      "name": "What to do",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/channels/whatsapp/link",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ code: $('Route').item.json.code, external_id: $('Route').item.json.wa_id, label: $('Route').item.json.label }) }}"
+      },
+      "id": "7aaed1d4-ec5c-56cd-b555-5106a69d179c",
+      "name": "Link chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/conversations/end",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DocChat-Link",
+              "value": "={{ $('Route').item.json.link }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: 'whatsapp', external_conversation_id: $('Route').item.json.link }) }}"
+      },
+      "id": "460fda20-d7cd-5dd9-9505-7f65ae2b9587",
+      "name": "New conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/channels/whatsapp/unlink",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ external_id: $('Route').item.json.wa_id }) }}"
+      },
+      "id": "dd6d2be7-2c8f-509e-94e9-4d4f6c0bb15f",
+      "name": "Unlink chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "operation": "mediaUrlGet",
+        "mediaGetId": "={{ $json.media_id }}"
+      },
+      "id": "c54d50fd-6f29-5ba8-affa-245c790d22f0",
+      "name": "Get file URL",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "d4a8fd4a-35fc-5832-814f-55b9604f40e5",
+      "name": "Download file",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        940,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/documents",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DocChat-Link",
+              "value": "={{ $('Route').item.json.link }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "source",
+              "value": "whatsapp"
+            },
+            {
+              "parameterType": "formData",
+              "name": "title",
+              "value": "={{ $('Route').item.json.file_name }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "meta",
+              "value": "={{ JSON.stringify({ chat_id: $('Route').item.json.wa_id, phone_number_id: $('Route').item.json.phone_number_id }) }}"
+            }
+          ]
+        }
+      },
+      "id": "b558e916-64b8-542f-83c5-a3d09e259f08",
+      "name": "Add document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1160,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/ask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DocChat-Link",
+              "value": "={{ $('Route').item.json.link }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ question: $('Route').item.json.question, channel: 'whatsapp', external_conversation_id: $('Route').item.json.link, format: 'whatsapp' }) }}"
+      },
+      "id": "e217258e-52d0-58b9-81ed-f2350739807b",
+      "name": "Ask DocChat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns each DocChat response into WhatsApp text messages.\nconst notLinked = 'This chat is not linked to a DocChat workspace yet. In DocChat, open *Workspace > Chat apps*, create a link code, and send it here as: link CODE';\nconst help = [\n  '*DocChat*',\n  'Ask a question about the documents and I answer with sources.',\n  '',\n  'link CODE: link this chat (code from Workspace > Chat apps)',\n  'new: start a new conversation',\n  'unlink: unlink this chat',\n  '',\n  'Send a PDF, TXT or Markdown file to add it.',\n].join('\\n');\nconst out = [];\n\n$input.all().forEach((item, index) => {\n  const from = $('Route').itemMatching(index).json;\n  const status = item.json.statusCode;\n  const body = item.json.body || {};\n  const error = body.error || {};\n  let texts;\n\n  if (from.route === 'help') texts = [help];\n  else if (from.route === 'unsupported') texts = ['I can read text messages and PDF, TXT or Markdown files.'];\n  else if (error.code === 'chat_not_linked') texts = [notLinked];\n  else if (status === 429 || error.code === 'model_busy' || error.code === 'rate_limited') texts = ['The model is busy. Try again in a minute.'];\n  else if (from.route === 'link') texts = [status === 200 ? `Linked to *${body.data.workspace.name}*. Ask me anything about its documents.` : 'That code did not work. It may be used or older than 15 minutes. Create a new one in DocChat.'];\n  else if (from.route === 'new') texts = ['Started a new conversation.'];\n  else if (from.route === 'unlink') texts = [body.data?.was_linked ? 'This chat is unlinked.' : 'This chat was not linked.'];\n  else if (from.route === 'document') texts = [status === 202 ? `Got *${from.file_name}*. I will tell you when it is ready.` : `I could not take that file: ${Object.values(error.details?.fields || {}).flat()[0] || error.message || 'unknown error'}`];\n  else if (status === 200 && Array.isArray(body.data?.formatted)) texts = body.data.formatted;\n  else texts = ['Something went wrong while answering. Please try again.'];\n\n  for (const text of texts) out.push({ json: { wa_id: from.wa_id, phone_number_id: from.phone_number_id, text } });\n});\n\nreturn out;"
+      },
+      "id": "0436ce48-f7db-5bff-99f3-e62e34d0894e",
+      "name": "Build reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "messageType": "text",
+        "phoneNumberId": "={{ $json.phone_number_id }}",
+        "recipientPhoneNumber": "={{ $json.wa_id }}",
+        "textBody": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "id": "b111f530-67ea-52f8-89bf-d75b5d0fb2cd",
+      "name": "Reply",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1600,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-docchat",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "8bd91556-a5e4-5a7d-9a4d-96b44434f521",
+      "name": "DocChat documents",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        900
+      ],
+      "webhookId": "fe66a844-b8cc-55e0-baa5-a00eaa1fe884"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Checks DocChat's signature: HMAC-SHA256 of the exact raw body with the\n// webhook secret, plus a 5 minute window on the timestamp against replays.\nconst crypto = require('crypto');\nconst secret = $env.DOCCHAT_CHANNEL_WEBHOOK_SECRET;\nconst item = $input.first();\nconst headers = item.json.headers || {};\nlet raw = '';\nif (item.binary && item.binary.data) {\n  raw = (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8');\n}\nconst signature = String(headers['x-docchat-signature'] || '');\nconst timestamp = String(headers['x-docchat-timestamp'] || '');\nconst expected = 'sha256=' + crypto.createHmac('sha256', String(secret || '')).update(raw).digest('hex');\nlet body = null;\ntry { body = JSON.parse(raw); } catch (error) { body = null; }\nconst fresh = /^\\d+$/.test(timestamp) && Math.abs(Date.now() / 1000 - Number(timestamp)) <= 300;\nconst valid = Boolean(secret)\n  && signature.length === expected.length\n  && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))\n  && fresh\n  && body !== null\n  && String(body.timestamp) === timestamp;\n\nconst document = valid ? body?.data?.document : null;\nreturn [{ json: { valid, document } }];"
+      },
+      "id": "ce755694-25fb-54f2-92f5-9f95a3f762a7",
+      "name": "Check signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d570f854-a217-5308-8d01-b8f3bfeb2514",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "45a1d9ea-0974-5c87-853b-531dd3531e72",
+      "name": "Signature valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": true}",
+        "options": {}
+      },
+      "id": "da9500ed-a42b-56c4-a92c-407ff4c2a5ce",
+      "name": "Accept",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        720,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"error\": \"invalid signature\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "b65bcaa5-e6d5-5fea-b58a-0e9ccd382343",
+      "name": "Reject",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        720,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tells the chat that sent a document whether it is ready. This lands inside\n// WhatsApp's 24-hour reply window, because the person just sent the file.\nconst doc = $('Check signature').first().json.document;\nconst waId = doc?.meta?.chat_id;\nif (!doc || doc.source !== 'whatsapp' || !waId || !doc.meta.phone_number_id) return [];\n\nconst text = doc.status === 'ready'\n  ? `*${doc.title}* is ready (${doc.page_count} ${doc.page_count === 1 ? 'page' : 'pages'}). Ask me about it.`\n  : `I could not read *${doc.title}*: ${doc.error}`;\n\nreturn [{ json: { wa_id: String(waId), phone_number_id: String(doc.meta.phone_number_id), text } }];"
+      },
+      "id": "2a49a251-fd8d-5c11-83bf-68a08d9cccda",
+      "name": "Document status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        820
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "What to do",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "What to do": {
+      "main": [
+        [
+          {
+            "node": "Link chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "New conversation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unlink chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get file URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask DocChat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get file URL": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Add document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link chat": {
+      "main": [
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New conversation": {
+      "main": [
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unlink chat": {
+      "main": [
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add document": {
+      "main": [
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask DocChat": {
+      "main": [
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build reply": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DocChat documents": {
+      "main": [
+        [
+          {
+            "node": "Check signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check signature": {
+      "main": [
+        [
+          {
+            "node": "Signature valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature valid?": {
+      "main": [
+        [
+          {
+            "node": "Accept",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept": {
+      "main": [
+        [
+          {
+            "node": "Document status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document status": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}
