@@ -10,6 +10,7 @@ use App\Models\Document;
 use App\Models\User;
 use App\Services\Rag\AnswerService;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeChatProvider;
 use Tests\Support\FakeEmbeddingProvider;
 
@@ -119,4 +120,33 @@ it('only searches the documents the conversation is scoped to', function () {
     $message = app(AnswerService::class)->answer($this->conversation, 'Question?');
 
     expect($message->content)->toBe(AnswerService::NOT_FOUND);
+});
+
+it('logs usage and retrieval stats but never the question or document text', function () {
+    addChunk($this->document, 0.9, content: 'Secret document text.');
+    useChat(new FakeChatProvider(['Answer [1].'], promptTokens: 50, completionTokens: 5));
+
+    $channel = Mockery::mock();
+    $channel->shouldReceive('info')->once()->withArgs(function (string $event, array $context): bool {
+        $encoded = json_encode($context);
+
+        return $event === 'answer'
+            && $context['prompt_tokens'] === 50
+            && $context['chunks'] === 1
+            && $context['refused'] === false
+            && ! str_contains($encoded, 'Private question')
+            && ! str_contains($encoded, 'Secret document text');
+    });
+    Log::shouldReceive('channel')->with('docchat')->andReturn($channel);
+
+    app(AnswerService::class)->answer($this->conversation, 'Private question?');
+});
+
+it('shows only the time under a refusal that made no model call', function () {
+    $message = app(AnswerService::class)->answer($this->conversation, 'Nothing matches');
+
+    Livewire\Livewire::actingAs($this->user)
+        ->test('pages::chat.index', ['conversation' => $this->conversation])
+        ->assertSee(number_format($message->latency_ms / 1000, 1).' s')
+        ->assertDontSee('tokens');
 });

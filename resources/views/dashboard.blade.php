@@ -1,18 +1,57 @@
+@php
+    $user = auth()->user();
+    $stats = [
+        ['label' => __('Ready documents'), 'value' => $user->documents()->where('status', \App\Enums\DocumentStatus::Ready)->count(), 'icon' => 'document-text'],
+        ['label' => __('Chunks indexed'), 'value' => \App\Models\Chunk::query()->ownedBy($user)->count(), 'icon' => 'squares-2x2'],
+        ['label' => __('Conversations'), 'value' => $user->conversations()->count(), 'icon' => 'chat-bubble-left-right'],
+    ];
+    $recent = $user->conversations()->latest('updated_at')->limit(5)->get();
+@endphp
+
 <x-layouts::app :title="__('Dashboard')">
-    <div class="flex h-full w-full flex-1 flex-col gap-4 rounded-xl">
-        <div class="grid auto-rows-min gap-4 md:grid-cols-3">
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
+    <div class="flex w-full max-w-5xl flex-col gap-8">
+        <div>
+            <flux:heading size="xl">{{ __('Welcome, :name', ['name' => $user->name]) }}</flux:heading>
+            <flux:subheading>{{ __('Upload documents, then ask questions about them in Chat.') }}</flux:subheading>
         </div>
-        <div class="relative h-full flex-1 overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-            <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
+
+        <div class="grid gap-4 md:grid-cols-3">
+            @foreach ($stats as $stat)
+                <div class="rounded-xl border border-zinc-200 p-5 dark:border-zinc-700" data-stat>
+                    <div class="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                        <flux:icon :name="$stat['icon']" variant="mini" />
+                        {{ $stat['label'] }}
+                    </div>
+                    <div class="mt-2 text-3xl font-semibold">{{ number_format($stat['value']) }}</div>
+                </div>
+            @endforeach
         </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+            <a href="{{ route('documents.index') }}" wire:navigate class="rounded-xl border border-zinc-200 p-5 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                <flux:heading>{{ __('Documents') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Upload PDF, TXT or Markdown files and watch them get indexed.') }}</flux:text>
+            </a>
+            <a href="{{ route('chat.index') }}" wire:navigate class="rounded-xl border border-zinc-200 p-5 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
+                <flux:heading>{{ __('Chat') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Ask a question and get an answer that cites the page it came from.') }}</flux:text>
+            </a>
+        </div>
+
+        @if ($recent->isNotEmpty())
+            <div>
+                <flux:heading size="lg">{{ __('Recent conversations') }}</flux:heading>
+                <ul class="mt-3 divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">
+                    @foreach ($recent as $conversation)
+                        <li>
+                            <a href="{{ route('chat.show', $conversation) }}" wire:navigate class="flex justify-between gap-4 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                                <span class="truncate">{{ $conversation->title ?? __('New conversation') }}</span>
+                                <span class="shrink-0 text-zinc-500">{{ $conversation->updated_at?->diffForHumans() }}</span>
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
     </div>
 </x-layouts::app>

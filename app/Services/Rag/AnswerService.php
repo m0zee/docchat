@@ -70,14 +70,20 @@ class AnswerService
         } catch (EmbeddingException $exception) {
             report($exception);
 
-            return $this->saveAssistant($conversation, '', $started, error: $exception->retryable
+            $message = $this->saveAssistant($conversation, '', $started, error: $exception->retryable
                 ? self::BUSY
                 : 'Search is not available: '.$exception->getMessage());
+            $this->log($conversation, $message, null);
+
+            return $message;
         }
 
         if ($this->lastRetrieved === []) {
             // Nothing relevant: answer without spending a model call.
-            return $this->saveAssistant($conversation, self::NOT_FOUND, $started, citations: []);
+            $message = $this->saveAssistant($conversation, self::NOT_FOUND, $started, citations: []);
+            $this->log($conversation, $message, null);
+
+            return $message;
         }
 
         $messages = $this->prompts->build($question, $this->lastRetrieved, $history->all());
@@ -116,20 +122,26 @@ class AnswerService
             error: $error,
         );
 
-        Log::info('docchat.answer', [
+        $this->log($conversation, $message, $result?->model);
+
+        return $message;
+    }
+
+    private function log(Conversation $conversation, Message $message, ?string $model): void
+    {
+        Log::channel('docchat')->info('answer', [
             'conversation_id' => $conversation->id,
             'message_id' => $message->id,
-            'model' => $result?->model,
+            'model' => $model,
             'prompt_tokens' => $message->prompt_tokens,
             'completion_tokens' => $message->completion_tokens,
             'usage_estimated' => $message->usage_estimated,
             'latency_ms' => $message->latency_ms,
             'chunks' => count($this->lastRetrieved),
-            'top_similarity' => $this->lastRetrieved[0]->similarity,
-            'error' => $error !== null,
+            'top_similarity' => $this->lastRetrieved === [] ? null : $this->lastRetrieved[0]->similarity,
+            'refused' => $message->content === self::NOT_FOUND,
+            'error' => $message->error !== null,
         ]);
-
-        return $message;
     }
 
     /**

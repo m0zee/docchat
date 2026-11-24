@@ -20,6 +20,7 @@ return [
         'driver' => env('DOCCHAT_CHAT_DRIVER', 'groq'),
         'max_output_tokens' => (int) env('DOCCHAT_CHAT_MAX_OUTPUT_TOKENS', 800),
         'timeout_seconds' => (int) env('DOCCHAT_CHAT_TIMEOUT_SECONDS', 120),
+        'rate_limit_per_minute' => (int) env('DOCCHAT_CHAT_RATE_LIMIT_PER_MINUTE', 20),
         'drivers' => [
             'openrouter' => [
                 'model' => env('DOCCHAT_OPENROUTER_MODEL'),

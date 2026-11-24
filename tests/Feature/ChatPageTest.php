@@ -172,3 +172,37 @@ it('escapes streamed deltas before they reach the page', function () {
     expect($streamed)->not->toContain('<img')
         ->and($streamed)->toContain('&lt;img');
 });
+
+it('lets the owner rename and delete a conversation', function () {
+    $conversation = Conversation::factory()->for($this->user)->create(['title' => 'Old']);
+    Message::factory()->for($conversation)->create();
+
+    Livewire::actingAs($this->user)
+        ->test('pages::chat.index', ['conversation' => $conversation])
+        ->call('rename', '  New title  ')
+        ->assertSee('New title');
+
+    expect($conversation->refresh()->title)->toBe('New title');
+
+    Livewire::actingAs($this->user)
+        ->test('pages::chat.index', ['conversation' => $conversation])
+        ->call('deleteConversation')
+        ->assertRedirect(route('chat.index'));
+
+    expect(Conversation::find($conversation->id))->toBeNull()
+        ->and(Message::count())->toBe(0);
+});
+
+it('cannot rename or delete another user\'s conversation', function () {
+    $theirs = Conversation::factory()->create(['title' => 'Theirs']);
+
+    $this->actingAs($this->user)->get(route('chat.show', $theirs))->assertForbidden();
+
+    // The component only ever loads conversations through the signed-in user.
+    Livewire::actingAs($this->user)
+        ->test('pages::chat.index')
+        ->call('rename', 'Hacked')
+        ->call('deleteConversation');
+
+    expect($theirs->refresh()->title)->toBe('Theirs');
+});
