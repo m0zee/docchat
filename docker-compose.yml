@@ -1,0 +1,68 @@
+name: docchat
+
+x-app-image: &app-image
+  build:
+    context: .
+    dockerfile: docker/app/Dockerfile
+  image: docchat-app:local
+
+services:
+  app:
+    <<: *app-image
+    ports:
+      - "${APP_PORT:-8000}:8080"
+    volumes:
+      - .:/var/www/html
+      - vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: pgvector/pgvector:0.8.7-pg16
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-docchat}
+      POSTGRES_USER: ${DB_USERNAME:-docchat}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-create-testing-db.sql:ro
+    ports:
+      - "${DB_FORWARD_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-docchat} -d ${DB_DATABASE:-docchat}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  worker:
+    <<: *app-image
+    command: ["php", "artisan", "queue:work", "--tries=3"]
+    volumes:
+      - .:/var/www/html
+      - vendor:/var/www/html/vendor
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  vite:
+    image: node:24-alpine
+    working_dir: /var/www/html
+    command: sh -c "npm install && npm run dev"
+    volumes:
+      - .:/var/www/html
+      - node_modules:/var/www/html/node_modules
+    ports:
+      - "${VITE_PORT:-5173}:5173"
+    environment:
+      VITE_HMR_HOST: ${VITE_HMR_HOST:-localhost}
+      VITE_HMR_PORT: ${VITE_PORT:-5173}
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  vendor:
+  node_modules:
