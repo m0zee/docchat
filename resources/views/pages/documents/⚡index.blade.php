@@ -102,12 +102,28 @@ new #[Title('Documents')] class extends Component {
     <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
         <form wire:submit="upload" class="space-y-4">
             <div>
-                <input
-                    type="file"
-                    wire:model="file"
-                    accept=".pdf,.txt,.md"
-                    class="block w-full cursor-pointer rounded-lg border border-zinc-300 bg-white text-sm text-zinc-700 file:mr-4 file:rounded-md file:border-0 file:bg-zinc-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600"
-                />
+                <label
+                    x-data="{ over: false }"
+                    x-on:dragover.prevent="over = true"
+                    x-on:dragleave.prevent="over = false"
+                    x-on:drop.prevent="over = false; $refs.input.files = $event.dataTransfer.files; $refs.input.dispatchEvent(new Event('change'))"
+                    x-bind:class="over ? 'border-zinc-500 bg-zinc-50 dark:border-zinc-400 dark:bg-zinc-800' : 'border-zinc-300 dark:border-zinc-600'"
+                    class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition"
+                    data-dropzone
+                >
+                    <flux:icon name="arrow-up-tray" class="size-7 text-zinc-400" />
+                    <span class="text-sm font-medium">{{ __('Drop a file here, or click to choose one') }}</span>
+                    @if ($file)
+                        <span class="text-sm text-zinc-600 dark:text-zinc-300">{{ $file->getClientOriginalName() }}</span>
+                    @endif
+                    <input
+                        x-ref="input"
+                        type="file"
+                        wire:model="file"
+                        accept=".pdf,.txt,.md"
+                        class="sr-only"
+                    />
+                </label>
 
                 @error('file')
                     <flux:text class="mt-2 text-sm !text-red-600 dark:!text-red-400">{{ $message }}</flux:text>
