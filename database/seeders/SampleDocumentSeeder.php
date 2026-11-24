@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Models\Workspace;
 use App\Services\Documents\DocumentService;
 use Illuminate\Database\Seeder;
 use Illuminate\Http\UploadedFile;
@@ -29,6 +30,10 @@ class SampleDocumentSeeder extends Seeder
         );
 
         $user->forceFill(['email_verified_at' => $user->email_verified_at ?? now()])->save();
+
+        if ($user->currentWorkspace() === null) {
+            Workspace::createFor($user, 'Demo workspace');
+        }
 
         if ($user->documents()->where('original_filename', self::FILE)->exists()) {
             $this->command?->info('The sample document is already uploaded for '.self::EMAIL.'.');
