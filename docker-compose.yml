@@ -39,7 +39,7 @@ services:
 
   worker:
     <<: *app-image
-    command: ["php", "artisan", "queue:work", "--tries=3"]
+    command: ["php", "artisan", "queue:listen", "--tries=3"]
     healthcheck:
       disable: true
     volumes:
