@@ -24,7 +24,7 @@
         <env name="BROADCAST_CONNECTION" value="null" force="true"/>
         <env name="CACHE_STORE" value="array" force="true"/>
         <env name="DB_CONNECTION" value="pgsql" force="true"/>
-        <env name="DB_HOST" value="db" force="true"/>
+        <env name="DB_HOST" value="db"/>
         <env name="DB_PORT" value="5432" force="true"/>
         <env name="DB_DATABASE" value="docchat_testing" force="true"/>
         <env name="DB_USERNAME" value="docchat" force="true"/>
