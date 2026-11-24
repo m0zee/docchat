@@ -10,6 +10,5 @@ final readonly class ParsedDocument
     public function __construct(
         public array $pages,
         public int $pageCount,
-    ) {
-    }
+    ) {}
 }

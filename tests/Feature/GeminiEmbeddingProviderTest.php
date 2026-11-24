@@ -3,7 +3,9 @@
 use App\Contracts\EmbeddingProvider;
 use App\Exceptions\EmbeddingException;
 use App\Services\Embedding\GeminiEmbeddingProvider;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 
@@ -24,7 +26,7 @@ beforeEach(function () {
     Sleep::fake();
 });
 
-function geminiEmbeddingResponse(int $count, int $dimensions = 1536): Illuminate\Http\Client\Response|GuzzleHttp\Promise\PromiseInterface
+function geminiEmbeddingResponse(int $count, int $dimensions = 1536): Response|PromiseInterface
 {
     return Http::response([
         'embeddings' => array_fill(0, $count, [
@@ -36,7 +38,7 @@ function geminiEmbeddingResponse(int $count, int $dimensions = 1536): Illuminate
 it('sends a batch request with the prefix, dimensions and API key header', function () {
     Http::fake(['*' => geminiEmbeddingResponse(1)]);
 
-    $vectors = (new GeminiEmbeddingProvider())->embedDocuments(['chunk one'], 'My Doc');
+    $vectors = (new GeminiEmbeddingProvider)->embedDocuments(['chunk one'], 'My Doc');
 
     expect($vectors)->toHaveCount(1)
         ->and($vectors[0])->toHaveCount(1536);
@@ -59,7 +61,7 @@ it('splits inputs into the configured batch size', function () {
 
     $texts = array_map(fn (int $index): string => 'chunk '.$index, range(1, 120));
 
-    (new GeminiEmbeddingProvider())->embedDocuments($texts, 'Batch');
+    (new GeminiEmbeddingProvider)->embedDocuments($texts, 'Batch');
 
     $sizes = Http::recorded()
         ->map(fn (array $pair): int => count($pair[0]->data()['requests']))
@@ -76,7 +78,7 @@ it('retries a rate-limited request and then succeeds', function () {
             'embeddings' => [['values' => array_fill(0, 1536, 0.1)]],
         ], 200);
 
-    $vectors = (new GeminiEmbeddingProvider())->embedDocuments(['chunk'], 'Doc');
+    $vectors = (new GeminiEmbeddingProvider)->embedDocuments(['chunk'], 'Doc');
 
     expect($vectors)->toHaveCount(1);
     Http::assertSentCount(2);
@@ -89,7 +91,7 @@ it('retries server errors', function () {
             'embeddings' => [['values' => array_fill(0, 1536, 0.1)]],
         ], 200);
 
-    $vectors = (new GeminiEmbeddingProvider())->embedDocuments(['chunk'], 'Doc');
+    $vectors = (new GeminiEmbeddingProvider)->embedDocuments(['chunk'], 'Doc');
 
     expect($vectors)->toHaveCount(1);
     Http::assertSentCount(2);
@@ -99,7 +101,7 @@ it('fails after the maximum number of attempts', function () {
     config(['docchat.embedding.max_retries' => 3]);
     Http::fake(['*' => Http::response(['error' => ['message' => 'rate limited']], 429)]);
 
-    expect(fn () => (new GeminiEmbeddingProvider())->embedDocuments(['chunk'], 'Doc'))
+    expect(fn () => (new GeminiEmbeddingProvider)->embedDocuments(['chunk'], 'Doc'))
         ->toThrow(EmbeddingException::class);
 
     Http::assertSentCount(3);
@@ -108,21 +110,21 @@ it('fails after the maximum number of attempts', function () {
 it('rejects vectors with the wrong dimensions', function () {
     Http::fake(['*' => geminiEmbeddingResponse(1, 10)]);
 
-    expect(fn () => (new GeminiEmbeddingProvider())->embedDocuments(['chunk'], 'Doc'))
+    expect(fn () => (new GeminiEmbeddingProvider)->embedDocuments(['chunk'], 'Doc'))
         ->toThrow(EmbeddingException::class);
 });
 
 it('requires an API key', function () {
     config(['docchat.embedding.api_key' => null]);
 
-    expect(fn () => (new GeminiEmbeddingProvider())->embedDocuments(['chunk'], 'Doc'))
+    expect(fn () => (new GeminiEmbeddingProvider)->embedDocuments(['chunk'], 'Doc'))
         ->toThrow(EmbeddingException::class, 'Set GEMINI_API_KEY in .env.');
 });
 
 it('prefixes query embeddings for retrieval', function () {
     Http::fake(['*' => geminiEmbeddingResponse(1)]);
 
-    $vector = (new GeminiEmbeddingProvider())->embedQuery('what is DocChat?');
+    $vector = (new GeminiEmbeddingProvider)->embedQuery('what is DocChat?');
 
     expect($vector)->toHaveCount(1536);
 

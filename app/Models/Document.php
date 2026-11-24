@@ -57,11 +57,17 @@ class Document extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<User, $this>
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * @return HasMany<Chunk, $this>
+     */
     public function chunks(): HasMany
     {
         return $this->hasMany(Chunk::class);

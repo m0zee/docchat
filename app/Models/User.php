@@ -61,6 +61,9 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             : $initials;
     }
 
+    /**
+     * @return HasMany<Document, $this>
+     */
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);

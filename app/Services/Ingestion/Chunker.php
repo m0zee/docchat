@@ -82,6 +82,11 @@ class Chunker
 
         if (preg_match_all('/[.!?](?=\s)/u', $tail, $matches, PREG_OFFSET_CAPTURE) > 0) {
             $last = end($matches[0]);
+
+            if ($last === false) {
+                return $windowEnd;
+            }
+
             $byteOffset = (int) $last[1];
 
             return $minimum + mb_strlen(substr($tail, 0, $byteOffset)) + 1;

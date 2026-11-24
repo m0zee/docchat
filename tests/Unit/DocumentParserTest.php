@@ -7,7 +7,7 @@ use App\Services\Ingestion\TextCleaner;
 use App\Services\Ingestion\TextParser;
 
 beforeEach(function () {
-    $cleaner = new TextCleaner();
+    $cleaner = new TextCleaner;
 
     $this->parser = new DocumentParser(
         new PdfParser($cleaner),

@@ -30,9 +30,7 @@ class IngestDocumentJob implements ShouldBeUnique, ShouldQueue
      */
     public array $backoff = [10, 30, 60];
 
-    public function __construct(public Document $document)
-    {
-    }
+    public function __construct(public Document $document) {}
 
     public function uniqueId(): string
     {

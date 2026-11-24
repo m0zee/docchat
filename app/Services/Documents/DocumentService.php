@@ -26,7 +26,8 @@ class DocumentService
 
         $title = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME) ?: 'Untitled';
 
-        $document = $user->documents()->create([
+        $document = Document::create([
+            'user_id' => $user->id,
             'title' => Str::limit($title, 255, ''),
             'original_filename' => $file->getClientOriginalName(),
             'storage_path' => $storagePath,

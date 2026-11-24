@@ -6,9 +6,7 @@ use App\Exceptions\DocumentParsingException;
 
 class TextParser
 {
-    public function __construct(private readonly TextCleaner $cleaner)
-    {
-    }
+    public function __construct(private readonly TextCleaner $cleaner) {}
 
     public function parse(string $absolutePath): ParsedDocument
     {

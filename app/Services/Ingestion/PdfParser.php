@@ -9,14 +9,12 @@ use Throwable;
 
 class PdfParser
 {
-    public function __construct(private readonly TextCleaner $cleaner)
-    {
-    }
+    public function __construct(private readonly TextCleaner $cleaner) {}
 
     public function parse(string $absolutePath): ParsedDocument
     {
         try {
-            $config = new Config();
+            $config = new Config;
             $config->setDecodeMemoryLimit(100 * 1024 * 1024);
 
             $pdf = (new Parser([], $config))->parseFile($absolutePath);

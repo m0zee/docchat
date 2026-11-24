@@ -9,6 +9,5 @@ final readonly class ChunkData
         public int $chunkIndex,
         public string $content,
         public int $tokenEstimate,
-    ) {
-    }
+    ) {}
 }

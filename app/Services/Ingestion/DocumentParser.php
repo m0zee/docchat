@@ -9,8 +9,7 @@ class DocumentParser
     public function __construct(
         private readonly PdfParser $pdfParser,
         private readonly TextParser $textParser,
-    ) {
-    }
+    ) {}
 
     public function parse(string $absolutePath, string $extension): ParsedDocument
     {
