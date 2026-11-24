@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AskController;
+use App\Http\Controllers\Api\AskStreamController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
@@ -12,6 +13,7 @@ Route::prefix('v1')->name('api.')->middleware('api.key')->group(function () {
 
     Route::middleware('api.ability:ask')->group(function () {
         Route::post('ask', AskController::class)->name('ask');
+        Route::match(['get', 'post'], 'ask/stream', AskStreamController::class)->name('ask.stream');
     });
 
     Route::middleware('api.ability:documents:read')->group(function () {
