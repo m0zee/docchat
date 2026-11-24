@@ -7,6 +7,7 @@ Three workflows that run DocChat from [n8n](https://n8n.io), the open-source aut
 | [drive-ingest.json](drive-ingest.json) | New and changed files in a Google Drive folder are uploaded to DocChat. Google Docs, Sheets and Slides are exported as PDF. When DocChat finishes (`document.ready` / `document.failed` webhook), it checks the signature and emails you. | `documents:write` |
 | [drive-sync-deletes.json](drive-sync-deletes.json) | Every night at 02:30, deletes DocChat documents whose Drive file is gone. | `documents:read`, `documents:write` |
 | [nightly-eval.json](nightly-eval.json) | Every night at 02:00, runs the `sample` eval set, waits for DocChat to post the results back, and emails a summary. | `evals:run` |
+| [telegram-bot.json](telegram-bot.json) | One Telegram bot for every workspace. See [Telegram bot](#telegram-bot). | a **service key** (`dc_svc_...`) |
 
 The exports hold no credentials. You create them once in n8n and pick them in each node after importing.
 
@@ -49,6 +50,53 @@ Google Drive and Gmail use one free Google Cloud project with an OAuth client: f
 5. Publish (activate) each workflow.
 
 To try a workflow before publishing it, open it and click **Execute workflow**.
+
+## Telegram bot
+
+One bot serves every workspace. A workspace owner links a chat with a one-time code, and from then on the bot answers that chat from that workspace's documents.
+
+### Create the bot (free)
+
+1. In Telegram, open [@BotFather](https://t.me/BotFather) and send `/newbot`. Pick a name and a username ending in `bot`. BotFather replies with a token like `123456789:AA...`. Keep it secret: it goes only into n8n.
+2. Optional: send `/setcommands` to BotFather, pick the bot, and paste:
+   ```
+   start - Link this chat with a code from DocChat
+   new - Start a new conversation
+   unlink - Unlink this chat
+   help - How to use the bot
+   ```
+3. Groups: leave **privacy mode** on (the default, `/setprivacy` > Enable). The bot then only receives commands, messages that @mention it, and replies to it, which is all it answers anyway. Turning privacy mode off would send every group message to your server.
+
+### Set it up
+
+1. On the server, create a service key once. It belongs to no workspace and is shown once:
+   ```bash
+   docker compose -f docker-compose.prod.yml exec app php artisan docchat:service-key "telegram bot"
+   ```
+   (`--list` shows keys, `--revoke=<id>` revokes one.) Put it in a new n8n Header Auth credential, **DocChat service key**: name `Authorization`, value `Bearer dc_svc_...`.
+2. In n8n, create a **Telegram API** credential with the BotFather token.
+3. In `.env`, set `TELEGRAM_BOT_USERNAME` (without the @), keep `DOCCHAT_CHANNEL_WEBHOOK_URL=http://n8n:5678/webhook/{channel}-docchat`, and set `DOCCHAT_CHANNEL_WEBHOOK_SECRET` to a random value (`openssl rand -hex 24`). DocChat and n8n both read it. Restart: `docker compose -f docker-compose.prod.yml up -d`.
+4. Import `telegram-bot.json`, pick the Telegram credential in the trigger and the two Telegram nodes, the service key in every HTTP Request node, and publish it. Telegram only delivers to HTTPS addresses, so the trigger works on the server (`https://n8n.<domain>`) or locally through the [tunnel](#testing-webhooks-from-the-internet-free-tunnel).
+
+### Use it
+
+- In DocChat, an owner opens **Workspace > Chat apps** and clicks **Create a link code**. The **Open Telegram** link opens the bot with `/start <code>`; pressing Start links the chat. For a group, add the bot to the group and send `/start <code>` there. Codes work once, for 15 minutes.
+- Ask questions in the chat. Answers come back as Telegram HTML with a Sources list, split under Telegram's 4096-character limit. Each chat keeps its own conversation, so follow-up questions work; `/new` starts over.
+- Send a PDF, TXT or Markdown file in a private chat and it is added to the workspace; the bot says when it is ready. Files sent in groups are ignored, so group members can ask but not add documents.
+- `/unlink` (or **Unlink** on the Chat apps page) disconnects the chat.
+
+### How it talks to DocChat
+
+| Bot action | DocChat call |
+|---|---|
+| `/start <code>` | `POST /api/v1/channels/telegram/link` with the code and chat id |
+| `/start` | `POST /api/v1/channels/telegram/resolve` |
+| question | `POST /api/v1/ask` with `X-DocChat-Link: telegram:<chat id>`, `channel=telegram`, `format=telegram_html` |
+| `/new` | `POST /api/v1/conversations/end` |
+| file | `POST /api/v1/documents` with `source=telegram` and the chat id in `meta` |
+| file ready | DocChat POSTs `document.ready` / `document.failed` to `.../webhook/telegram-docchat`, signed with `DOCCHAT_CHANNEL_WEBHOOK_SECRET` |
+
+The service key can act in any workspace whose chat is linked, so treat it like a server password. It cannot run evals or reach a chat that nobody linked.
 
 ## How the signature check works
 
