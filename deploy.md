@@ -133,6 +133,24 @@ docker compose -f docker-compose.prod.yml up -d
 
 Workflows on the same server call DocChat at `http://app:8080` (inside Docker, no TLS round trip), and DocChat's webhooks can point at `http://n8n:5678/webhook/...` for the same reason.
 
+### Voices for calls: Kokoro and voice clones (optional)
+
+Calls work without these: website calls use the visitor's browser voice and the phone line uses Twilio's free basic voice. Both extra voices are free, run on the VM's CPU and work on the Arm (Ampere) shape:
+
+| Service | Start it | Memory | On 2 Arm OCPUs |
+|---|---|---|---|
+| Kokoro natural voice | `docker compose -f docker-compose.prod.yml --profile voice up -d kokoro`, then `DOCCHAT_KOKORO_URL=http://kokoro:8880` | about 2 GB | A short reply takes about a second or two |
+| Voice clones (Kyutai Pocket TTS) | `docker compose -f docker-compose.prod.yml --profile clone up -d --build voice-clone`, then `DOCCHAT_CLONE_URL=http://voice-clone:8000` and `HF_TOKEN` | about 2 GB | Roughly real time, so a reply can take a few seconds the first time |
+
+- **Memory.** DocChat, the worker, Postgres, Caddy and n8n use about 3 GB, so both voices fit in 12 GB with room to spare. Run one of them if you picked a smaller shape.
+- **CPU.** The two Arm cores are shared by everything, so a call can be slower while documents are being indexed. Lines are cached after the first time (greetings, fillers, repeated answers), so they play at once afterwards.
+- **Arm images.** Kokoro's image (`ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0`) has an arm64 build. The voice clone image is built on the VM from `docker/voice-clone/Dockerfile`: `pocket-tts` is pure Python and PyTorch, NumPy, SciPy, SentencePiece and Tokenizers all ship arm64 wheels. The first build downloads about 1 GB and takes a few minutes; the model is downloaded into the `voice_clone_models` volume on first start.
+- **Hugging Face.** The voice clone model's files are gated: sign in to a free Hugging Face account, accept the Pocket TTS terms, make a read token and put it in `.env` as `HF_TOKEN`. No card is needed.
+- **One language per clone server** (`DOCCHAT_CLONE_LANGUAGE`: `en`, `es`, `fr` or `de`).
+- **Idle reclaim.** Neither service keeps the CPU busy when nobody calls, so they don't help with the idle reclaim below.
+
+Neither was run on a real Oracle VM while building DocChat: the build sandbox couldn't download the images. If a service won't start, `docker compose -f docker-compose.prod.yml logs kokoro` (or `voice-clone`) shows why, and calls keep working with the other voices meanwhile.
+
 ## 7. Day-to-day
 
 | Task | Command |
