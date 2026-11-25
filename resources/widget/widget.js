@@ -228,6 +228,74 @@
     return pump();
   }
 
+  // In-browser AI (opt-in per workspace): when this visitor's Chrome already
+  // has its built-in model downloaded, the browser writes the answer and the
+  // server only searches. Never starts a model download for a visitor.
+  var device = { ready: false };
+  var DEVICE_LANGS = { type: 'text', languages: ['en'] };
+  function deviceOptions() { return { expectedInputs: [DEVICE_LANGS], expectedOutputs: [DEVICE_LANGS] }; }
+  function checkDevice() {
+    device.ready = false;
+    if (!state.config.device_ai || typeof window.LanguageModel === 'undefined') return;
+    try {
+      window.LanguageModel.availability(deviceOptions()).then(function (a) { device.ready = a === 'available'; }, function () {});
+    } catch (e) { /* unsupported */ }
+  }
+
+  function askOnDevice(question, answer, done, fallback) {
+    var conversationId = null;
+    var token = null;
+    function post(path, body) {
+      return fetch(BASE + path, { method: 'POST', headers: headers(), body: JSON.stringify(body) })
+        .then(function (r) { return r.json().catch(function () { return null; }).then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); });
+    }
+    function show(text) {
+      answer.classList.remove('dots');
+      answer.textContent = '';
+      answer.appendChild(rich(text));
+      log.scrollTop = log.scrollHeight;
+    }
+    return post('/api/v1/ask/device', { question: question, external_conversation_id: state.conversation }).then(function (res) {
+      if (!res.ok || !res.body || !res.body.data) {
+        if (res.status === 403) { device.ready = false; return fallback(); }
+        return done(null, errorText(res.status, res.body));
+      }
+      var data = res.body.data;
+      if (data.status === 'answered') return done(data);
+      conversationId = data.conversation_id;
+      token = data.token;
+      var messages = data.messages || [];
+      var last = messages.pop() || { content: question };
+      var text = '';
+      var session = null;
+      return window.LanguageModel.create(Object.assign(deviceOptions(), { initialPrompts: messages })).then(function (s) {
+        session = s;
+        var reader = s.promptStreaming(last.content).getReader();
+        function pump() {
+          return reader.read().then(function (chunk) {
+            if (chunk.done) return;
+            text += chunk.value;
+            show(text);
+            return pump();
+          });
+        }
+        return pump();
+      }).then(function () {
+        if (session) session.destroy();
+        return post('/api/v1/ask/device/complete', { conversation_id: conversationId, token: token, answer: text, engine: 'chrome' }).then(function (r) {
+          if (r.ok && r.body && r.body.data) return done(r.body.data);
+          return done(null, errorText(r.status, r.body));
+        });
+      }, function (error) {
+        if (session) session.destroy();
+        // The model failed on this device: record it, then ask the server instead.
+        device.ready = false;
+        post('/api/v1/ask/device/complete', { conversation_id: conversationId, token: token, answer: '', error: String((error && error.name) || 'error').slice(0, 200), engine: 'chrome' });
+        return fallback();
+      });
+    });
+  }
+
   function ask() {
     var question = input.value.trim();
     if (!question || state.busy) return;
@@ -252,7 +320,30 @@
       log.appendChild(bubbleFor({ role: 'error', text: message }));
     }
 
-    fetch(BASE + '/api/v1/ask/stream', {
+    function finish(data, error) {
+      if (error || !data) return fail(error || errorText(0, null));
+      finished = true;
+      var m = { role: 'bot', text: data.answer || text, citations: data.citations || [], refused: !!data.refused };
+      remember(m);
+      answer.replaceWith(bubbleFor(m));
+      log.scrollTop = log.scrollHeight;
+    }
+
+    var request = device.ready
+      ? askOnDevice(question, answer, finish, serverAsk)
+      : serverAsk();
+
+    request.catch(function () {
+      fail('Could not reach the assistant. Check your connection.');
+    }).then(function () {
+      state.busy = false;
+      send.disabled = false;
+    });
+
+    function serverAsk() {
+    answer.classList.add('dots');
+    text = '';
+    return fetch(BASE + '/api/v1/ask/stream', {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({ question: question, external_conversation_id: state.conversation }),
@@ -278,12 +369,8 @@
           fail(errorText(0, { error: data }));
         }
       }).then(function () { if (!finished) fail(errorText(0, null)); });
-    }).catch(function () {
-      fail('Could not reach the assistant. Check your connection.');
-    }).then(function () {
-      state.busy = false;
-      send.disabled = false;
     });
+    }
   }
 
   function applyConfig(config) {
@@ -291,6 +378,7 @@
     title.textContent = state.config.title;
     if (/^#[0-9a-fA-F]{3,8}$/.test(state.config.color || '')) wrap.style.setProperty('--c', state.config.color);
     wrap.classList.toggle('left', state.config.position === 'left');
+    checkDevice();
     render();
   }
 

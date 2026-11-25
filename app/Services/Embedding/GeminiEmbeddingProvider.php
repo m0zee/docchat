@@ -4,6 +4,7 @@ namespace App\Services\Embedding;
 
 use App\Contracts\EmbeddingProvider;
 use App\Exceptions\EmbeddingException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -11,6 +12,16 @@ use Illuminate\Support\Sleep;
 class GeminiEmbeddingProvider implements EmbeddingProvider
 {
     public const MAX_RETRY_DELAY_MS = 60_000;
+
+    /**
+     * @param  string|null  $apiKey  a workspace's own key; null uses GEMINI_API_KEY
+     */
+    public function __construct(private ?string $apiKey = null) {}
+
+    public function usesOwnKey(): bool
+    {
+        return $this->apiKey !== null;
+    }
 
     public function embedDocuments(array $texts, string $title = ''): array
     {
@@ -39,7 +50,7 @@ class GeminiEmbeddingProvider implements EmbeddingProvider
      */
     private function embed(array $texts): array
     {
-        $apiKey = (string) config('docchat.embedding.api_key');
+        $apiKey = trim((string) ($this->apiKey ?? config('docchat.embedding.api_key')));
 
         if ($apiKey === '') {
             throw EmbeddingException::permanent('Set GEMINI_API_KEY in .env.');
@@ -96,10 +107,14 @@ class GeminiEmbeddingProvider implements EmbeddingProvider
         $baseDelay = max(0, (int) config('docchat.embedding.retry_base_ms'));
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            $response = Http::withHeaders(['x-goog-api-key' => $apiKey])
-                ->acceptJson()
-                ->timeout(60)
-                ->post($url, $payload);
+            try {
+                $response = Http::withHeaders(['x-goog-api-key' => $apiKey])
+                    ->acceptJson()
+                    ->timeout(60)
+                    ->post($url, $payload);
+            } catch (ConnectionException $exception) {
+                throw new EmbeddingException('Could not reach the Gemini API.', retryable: true, previous: $exception);
+            }
 
             if ($response->successful()) {
                 return $response;
@@ -107,6 +122,14 @@ class GeminiEmbeddingProvider implements EmbeddingProvider
 
             $status = $response->status();
             $retryable = $status === 429 || $status >= 500;
+
+            if ($this->usesOwnKey() && in_array($status, [400, 401, 403], true)) {
+                throw new EmbeddingException(
+                    'Gemini did not accept your workspace key (status '.$status.'). Check it in Workspace > AI keys.',
+                    retryable: false,
+                    ownKeyRejected: true,
+                );
+            }
 
             if (! $retryable || $attempt === $maxAttempts) {
                 throw new EmbeddingException(

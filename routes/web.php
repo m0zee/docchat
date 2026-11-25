@@ -22,6 +22,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('workspace', 'pages::workspace.general')->name('workspace.general');
     Route::livewire('workspace/members', 'pages::workspace.members')->name('workspace.members');
     Route::livewire('workspace/api-keys', 'pages::workspace.api-keys')->name('workspace.api-keys');
+    Route::livewire('workspace/ai-keys', 'pages::workspace.ai-keys')->name('workspace.ai-keys');
     Route::livewire('workspace/usage', 'pages::workspace.usage')->name('workspace.usage');
     Route::livewire('workspace/webhooks', 'pages::workspace.webhooks')->name('workspace.webhooks');
     Route::livewire('workspace/chat-apps', 'pages::workspace.channels')->name('workspace.channels');

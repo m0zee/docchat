@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $latency_ms
  * @property bool $usage_estimated
  * @property string|null $cache_hit
+ * @property string|null $ai_source platform, workspace or device; null when no model ran
  * @property string|null $error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -38,6 +39,7 @@ use Illuminate\Support\Carbon;
     'latency_ms',
     'usage_estimated',
     'cache_hit',
+    'ai_source',
     'error',
 ])]
 class Message extends Model

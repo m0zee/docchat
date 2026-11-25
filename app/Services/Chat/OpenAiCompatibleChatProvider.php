@@ -5,6 +5,7 @@ namespace App\Services\Chat;
 use App\Contracts\ChatProvider;
 use App\Exceptions\ChatProviderException;
 use App\Exceptions\ChatRateLimitedException;
+use App\Exceptions\InvalidProviderKeyException;
 use Generator;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -17,6 +18,39 @@ use Psr\Http\Message\StreamInterface;
 abstract class OpenAiCompatibleChatProvider implements ChatProvider
 {
     /**
+     * @param  string|null  $apiKey  a workspace's own key; null uses the app's key from config
+     * @param  string|null  $model  a model for that key; null uses the configured model
+     */
+    public function __construct(
+        protected ?string $apiKey = null,
+        protected ?string $model = null,
+    ) {}
+
+    /**
+     * True when this provider runs on a workspace's own key.
+     */
+    public function usesOwnKey(): bool
+    {
+        return $this->apiKey !== null;
+    }
+
+    /**
+     * Name of the request field that limits the answer length.
+     */
+    protected function maxTokensField(): string
+    {
+        return 'max_completion_tokens';
+    }
+
+    /**
+     * Human name of the provider for error messages.
+     */
+    protected function label(): string
+    {
+        return ucfirst($this->driverName());
+    }
+
+    /**
      * Config key under docchat.chat.drivers.
      */
     abstract protected function driverName(): string;
@@ -25,6 +59,14 @@ abstract class OpenAiCompatibleChatProvider implements ChatProvider
      * Name of the env variable holding the key, used in error messages.
      */
     abstract protected function apiKeyEnv(): string;
+
+    /**
+     * Name of the env variable holding the model, used in error messages.
+     */
+    protected function modelEnv(): string
+    {
+        return 'DOCCHAT_'.strtoupper($this->driverName()).'_MODEL';
+    }
 
     /**
      * Provider-specific request fields merged into the payload.
@@ -66,17 +108,17 @@ abstract class OpenAiCompatibleChatProvider implements ChatProvider
     public function stream(array $messages, array $options = []): Generator
     {
         $config = (array) config('docchat.chat.drivers.'.$this->driverName(), []);
-        $apiKey = trim((string) ($config['api_key'] ?? ''));
-        $model = trim((string) ($config['model'] ?? ''));
+        $apiKey = trim((string) ($this->apiKey ?? $config['api_key'] ?? ''));
+        $model = trim((string) (($this->model ?? '') !== '' ? $this->model : ($config['model'] ?? '')));
 
         if ($apiKey === '') {
             throw new ChatProviderException('Set '.$this->apiKeyEnv().' in .env.');
         }
 
         if ($model === '') {
-            throw new ChatProviderException(
-                'Set DOCCHAT_'.strtoupper($this->driverName()).'_MODEL in .env.',
-            );
+            throw new ChatProviderException($this->usesOwnKey()
+                ? 'Choose a '.$this->label().' model for your workspace key in Workspace > AI keys.'
+                : 'Set '.$this->modelEnv().' in .env.');
         }
 
         $url = rtrim((string) ($config['base_url'] ?? ''), '/').'/chat/completions';
@@ -85,7 +127,7 @@ abstract class OpenAiCompatibleChatProvider implements ChatProvider
             'model' => $model,
             'messages' => $messages,
             'stream' => true,
-            'max_completion_tokens' => (int) ($options['max_output_tokens'] ?? config('docchat.chat.max_output_tokens')),
+            $this->maxTokensField() => (int) ($options['max_output_tokens'] ?? config('docchat.chat.max_output_tokens')),
         ], $this->extraPayload());
 
         try {
@@ -97,6 +139,12 @@ abstract class OpenAiCompatibleChatProvider implements ChatProvider
                 ->post($url, $payload);
         } catch (ConnectionException) {
             throw new ChatProviderException('Could not reach the '.$this->driverName().' API.');
+        }
+
+        if ($this->usesOwnKey() && in_array($response->status(), [400, 401, 403], true)) {
+            throw new InvalidProviderKeyException(
+                $this->label().' did not accept your workspace key (status '.$response->status().'). Check it in Workspace > AI keys.',
+            );
         }
 
         if ($response->status() === 429) {
