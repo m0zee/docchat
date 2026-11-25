@@ -6,6 +6,8 @@ enum CallStatus: string
 {
     /** An outbound call link that nobody has opened yet. */
     case Waiting = 'waiting';
+    /** An outbound phone call set for a later time. */
+    case Scheduled = 'scheduled';
     case Queued = 'queued';
     case Ringing = 'ringing';
     case InProgress = 'in_progress';
@@ -19,6 +21,7 @@ enum CallStatus: string
     {
         return match ($this) {
             self::Waiting => 'Waiting',
+            self::Scheduled => 'Scheduled',
             self::Queued => 'Queued',
             self::Ringing => 'Ringing',
             self::InProgress => 'In progress',
@@ -28,6 +31,14 @@ enum CallStatus: string
             self::Failed => 'Failed',
             self::Canceled => 'Canceled',
         };
+    }
+
+    /**
+     * Not started yet, so the owner can still cancel it.
+     */
+    public function isPending(): bool
+    {
+        return in_array($this, [self::Waiting, self::Scheduled, self::Queued], true);
     }
 
     public function isFinished(): bool

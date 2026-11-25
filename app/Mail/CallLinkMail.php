@@ -14,12 +14,17 @@ class CallLinkMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    public function __construct(public Call $call, public string $url) {}
+    /**
+     * @param  bool  $reminder  the "it's time" email of a scheduled call
+     */
+    public function __construct(public Call $call, public string $url, public bool $reminder = false) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: __(':workspace would like to talk', ['workspace' => $this->call->workspace->name]),
+            subject: $this->reminder
+                ? __('Your call with :workspace is ready', ['workspace' => $this->call->workspace->name])
+                : __(':workspace would like to talk', ['workspace' => $this->call->workspace->name]),
         );
     }
 

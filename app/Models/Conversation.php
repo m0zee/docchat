@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use RuntimeException;
@@ -21,9 +22,13 @@ use RuntimeException;
  * @property ConversationChannel $channel
  * @property string|null $external_id
  * @property string|null $title
+ * @property string|null $summary cached AI summary
+ * @property int|null $summary_message_id the last message the summary covers
+ * @property Carbon|null $summarized_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read User|null $user
+ * @property-read Call|null $call
  */
 #[Fillable(['workspace_id', 'user_id', 'channel', 'external_id', 'title'])]
 class Conversation extends Model
@@ -45,6 +50,8 @@ class Conversation extends Model
     {
         return [
             'channel' => ConversationChannel::class,
+            'summary_message_id' => 'integer',
+            'summarized_at' => 'datetime',
         ];
     }
 
@@ -89,6 +96,16 @@ class Conversation extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The call this conversation is the transcript of, if any.
+     *
+     * @return HasOne<Call, $this>
+     */
+    public function call(): HasOne
+    {
+        return $this->hasOne(Call::class);
     }
 
     /**

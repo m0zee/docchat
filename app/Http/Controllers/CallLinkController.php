@@ -23,6 +23,7 @@ class CallLinkController extends Controller
             'call' => $call,
             'token' => $call === null ? null : $token,
             'workspace' => $call?->workspace,
+            'early' => $call?->isTooEarly() ?? false,
         ]);
     }
 

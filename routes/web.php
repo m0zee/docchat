@@ -38,6 +38,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('chat', 'pages::chat.index')->name('chat.index');
     Route::livewire('chat/{conversation}', 'pages::chat.index')->name('chat.show');
 
+    // Owners: every conversation in the workspace, summaries and scheduled calls.
+    Route::livewire('conversations', 'pages::conversations.index')->name('conversations.index');
+
     Route::livewire('workspace', 'pages::workspace.general')->name('workspace.general');
     Route::livewire('workspace/members', 'pages::workspace.members')->name('workspace.members');
     Route::livewire('workspace/api-keys', 'pages::workspace.api-keys')->name('workspace.api-keys');

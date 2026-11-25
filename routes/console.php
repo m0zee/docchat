@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Cache\AnswerCache;
+use App\Services\Calls\OutboundCalls;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -32,3 +33,10 @@ Artisan::command('docchat:prune-voice-cache {--days=7}', function () {
 })->purpose('Delete cached Kokoro and voice clone clips older than --days');
 
 Schedule::command('docchat:prune-voice-cache')->daily();
+
+Artisan::command('docchat:start-scheduled-calls', function (OutboundCalls $calls) {
+    $started = $calls->startDue();
+    $this->info("Started {$started['phone']} phone calls, sent {$started['links']} call link reminders, skipped {$started['missed']} missed calls.");
+})->purpose('Start scheduled outbound calls whose time has come');
+
+Schedule::command('docchat:start-scheduled-calls')->everyMinute()->withoutOverlapping();

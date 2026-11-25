@@ -50,6 +50,8 @@ The speaker can withdraw on the same link at any time, which deletes the recordi
 
 Only call people who agreed to it. Add them under **Contacts**, tick **This person agreed to be called** and note how they agreed. Anyone who says "stop calling" on a call, in any of the supported languages, is never called again. Phone calls only start inside the calling hours the server sets.
 
+To call someone at a set time, with an agenda the assistant follows, use **Conversations > Schedule calls** (see [Conversations and summaries](/docs/conversations)). Every call's transcript is listed there too, with a one-click summary.
+
 For phone calls you make, **voicemail detection** can hang up on answering machines or leave a short message. It uses Twilio credit, so it is off by default.
 
 ## Voice notes

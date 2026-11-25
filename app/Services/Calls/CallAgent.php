@@ -5,6 +5,7 @@ namespace App\Services\Calls;
 use App\Enums\CallDirection;
 use App\Enums\CallStatus;
 use App\Enums\MessageRole;
+use App\Evals\EvalRunner;
 use App\Models\Call;
 use App\Models\Conversation;
 use App\Services\Rag\AnswerService;
@@ -78,9 +79,25 @@ class CallAgent
             'about' => $this->about($call, $language),
         ]);
 
-        $line .= ' '.(filled($call->opening) ? trim((string) $call->opening) : Phrases::get($language, 'outbound_default'));
+        $agenda = $call->agendaPoints();
 
-        return $line.' '.Phrases::get($language, 'opt_out_hint');
+        if ($agenda === []) {
+            $line .= ' '.(filled($call->opening) ? trim((string) $call->opening) : Phrases::get($language, 'outbound_default'));
+
+            return $line.' '.Phrases::get($language, 'opt_out_hint');
+        }
+
+        // With an agenda the first point is the opening question, after the
+        // opt-out hint, so the call ends on something the person can answer.
+        if (filled($call->opening)) {
+            $line .= ' '.trim((string) $call->opening);
+        }
+
+        if ($call->agenda_step < 1) {
+            $call->forceFill(['agenda_step' => 1])->save();
+        }
+
+        return $line.' '.Phrases::get($language, 'opt_out_hint').' '.$agenda[0];
     }
 
     /**
@@ -143,7 +160,13 @@ class CallAgent
             return new CallReply($text, end: true);
         }
 
-        if (Phrases::isGoodbye($heard)) {
+        $agenda = $call->agendaPoints();
+        // The last point asked is still open until the caller answers it.
+        $agendaOpen = $agenda !== [] && $call->agenda_step <= count($agenda);
+
+        // "No thanks" answers an agenda question; it only ends the call once
+        // the agenda is done.
+        if (Phrases::isGoodbye($heard) && ! ($agendaOpen && self::isShortNo($heard))) {
             $this->hear($conversation, $heard);
             $text = Phrases::get($language, 'goodbye');
             $this->say($conversation, $text);
@@ -152,11 +175,28 @@ class CallAgent
             return new CallReply($text, end: true);
         }
 
-        $message = $this->answers->answer($conversation, $heard, style: VoiceProfile::answerStyle($profile, $call->language));
+        $style = VoiceProfile::answerStyle($profile, $call->language);
+
+        if ($agendaOpen) {
+            $style .= ' This call follows an agenda: do not ask the caller a question yourself, the next question is added after your answer.';
+        }
+
+        $message = $this->answers->answer($conversation, $heard, style: $style);
         $max = max(80, (int) config('docchat.calls.max_spoken_chars'));
         $refused = $message->content === AnswerService::NOT_FOUND;
 
-        if ($message->error !== null) {
+        if ($agendaOpen && $message->error === null) {
+            $refused = $refused || EvalRunner::isRefusal($message->content);
+            // An agenda call: answer from the documents when they cover what
+            // was said, otherwise just acknowledge it. Then ask the next point.
+            $next = $call->agenda_step < count($agenda) ? $agenda[$call->agenda_step] : Phrases::get($language, 'anything_else');
+            $text = ($refused ? Phrases::get($language, 'agenda_ack', [], $call->turns - 1) : SpokenText::from($message->content, $max)).' '.$next;
+            $call->forceFill(['agenda_step' => $call->agenda_step + 1])->save();
+
+            // Keep the transcript to what was said, so summaries see the agenda.
+            $message->forceFill(['content' => $refused ? $text : trim($message->content).' '.$next])->save();
+            $refused = false;
+        } elseif ($message->error !== null) {
             Log::channel('docchat')->warning('call answer failed', ['call_id' => $call->id, 'error' => $message->error]);
             $text = Phrases::get($language, 'trouble');
         } elseif ($refused) {
@@ -202,6 +242,15 @@ class CallAgent
     public static function isGoodbye(string $heard): bool
     {
         return Phrases::isGoodbye($heard);
+    }
+
+    /**
+     * A short "no" or "no thanks", which answers a yes/no question.
+     */
+    public static function isShortNo(string $heard): bool
+    {
+        return (bool) preg_match('/^\s*(no|nope|nah|not really|nein|non|nahi|nahin|नहीं|نہیں|لا)(\W|$)/iu', $heard)
+            && count(preg_split('/\s+/u', trim($heard)) ?: []) <= 4;
     }
 
     public static function isOptOut(string $heard): bool

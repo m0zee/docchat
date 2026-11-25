@@ -10,6 +10,20 @@
                 :description="$call->purpose ? __('About: :purpose', ['purpose' => $call->purpose]) : __('An automated assistant can answer your questions.')"
             />
 
+            @if ($early)
+                @php($local = $call->scheduledLocal())
+                <div class="flex flex-col gap-3" data-test="call-scheduled">
+                    <flux:callout icon="clock" :heading="__('Your call is scheduled for :time', ['time' => $local->isoFormat('dddd D MMMM, HH:mm').' ('.$local->getTimezone()->getName().')'])">
+                        <flux:callout.text>
+                            {{ __('That is') }} <span x-data x-text="new Date(@js($call->scheduled_at->toIso8601String())).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })"></span> {{ __('where you are. Come back to this link then; it opens :minutes minutes before.', ['minutes' => \App\Models\Call::EARLY_MINUTES]) }}
+                        </flux:callout.text>
+                    </flux:callout>
+                    <form method="POST" action="{{ route('calls.opt-out', $token) }}">
+                        @csrf
+                        <flux:button type="submit" variant="ghost" class="w-full" size="sm">{{ __('Don\'t call me again') }}</flux:button>
+                    </form>
+                </div>
+            @else
             <div id="call-box" class="hidden h-[480px] overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700" data-test="call-box"></div>
 
             <div id="call-intro" class="flex flex-col gap-3">
@@ -47,6 +61,7 @@
                     });
                 })();
             </script>
+            @endif
         @endif
     </div>
 </x-layouts::auth>

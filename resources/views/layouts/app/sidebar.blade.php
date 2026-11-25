@@ -25,6 +25,13 @@
                     <flux:sidebar.item icon="chat-bubble-left-right" :href="route('chat.index')" :current="request()->routeIs('chat.*')" wire:navigate>
                         {{ __('Chat') }}
                     </flux:sidebar.item>
+
+                    @php($sidebarWorkspace = app(\App\Support\CurrentWorkspace::class)->get())
+                    @if ($sidebarWorkspace && auth()->user()?->can('manage', $sidebarWorkspace))
+                        <flux:sidebar.item icon="inbox-stack" :href="route('conversations.index')" :current="request()->routeIs('conversations.*')" wire:navigate>
+                            {{ __('Conversations') }}
+                        </flux:sidebar.item>
+                    @endif
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
