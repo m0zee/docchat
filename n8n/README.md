@@ -8,6 +8,9 @@ Three workflows that run DocChat from [n8n](https://n8n.io), the open-source aut
 | [drive-sync-deletes.json](drive-sync-deletes.json) | Every night at 02:30, deletes DocChat documents whose Drive file is gone. | `documents:read`, `documents:write` |
 | [nightly-eval.json](nightly-eval.json) | Every night at 02:00, runs the `sample` eval set, waits for DocChat to post the results back, and emails a summary. | `evals:run` |
 | [telegram-bot.json](telegram-bot.json) | One Telegram bot for every workspace. See [Telegram bot](#telegram-bot). | a **service key** (`dc_svc_...`) |
+| [whatsapp-bot.json](whatsapp-bot.json) | One WhatsApp Business number for every workspace. See [WhatsApp bot](#whatsapp-bot). | the same service key |
+
+Discord does not use n8n: DocChat answers Discord slash commands itself. See [docs/discord.md](../docs/discord.md).
 
 The exports hold no credentials. You create them once in n8n and pick them in each node after importing.
 
@@ -97,6 +100,33 @@ One bot serves every workspace. A workspace owner links a chat with a one-time c
 | file ready | DocChat POSTs `document.ready` / `document.failed` to `.../webhook/telegram-docchat`, signed with `DOCCHAT_CHANNEL_WEBHOOK_SECRET` |
 
 The service key can act in any workspace whose chat is linked, so treat it like a server password. It cannot run evals or reach a chat that nobody linked.
+
+## WhatsApp bot
+
+Works like the Telegram bot, on Meta's **WhatsApp Business Cloud API**: people send `link <code>` once, then ask in plain messages. `new`, `unlink` and `help` work too, and files they send (PDF, TXT, Markdown) are added and reported when ready.
+
+### Costs: check before you switch it on
+
+WhatsApp is the one channel here that may not be free. Meta's pricing changed during 2026. Check [Meta's pricing page](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing) before using a real number:
+
+- Messages people send to you are free.
+- Replies are only allowed inside the **24-hour customer service window** that opens when someone writes to you. This workflow only ever replies, and it never sends template messages, so it never starts a conversation.
+- Until 30 September 2026, those replies were free. Meta's AI providers page says Meta "resumed charging" for service messages from **1 October 2026**, per message, at the utility rate of the recipient's country (for example about US$0.0014 in India and US$0.0034 in the US/Canada, as reported by [Courier](https://www.courier.com/blog/whatsapp-pricing-changes-october-2026)). Meta's main pricing page still says non-template messages are free, so confirm in your WhatsApp Manager billing before going live.
+- Since 15 January 2026, Meta's terms allow general-purpose AI assistants only where the law requires it ([AI providers](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/ai-providers)). DocChat answers only from a business's own documents, so it is a business bot, not a general-purpose assistant. Keep it that way.
+
+For a free test, use the **test number** Meta gives every new app and message it only from the up to 5 phone numbers you add as test recipients.
+
+### Set it up
+
+1. Create a Meta developer account and an app of type **Business** at [developers.facebook.com](https://developers.facebook.com/apps), and add the **WhatsApp** product. Meta gives you a test phone number, its **Phone number ID**, and a temporary access token. For a token that does not expire, create a System User in Business Settings and give it the `whatsapp_business_messaging` permission.
+2. In n8n, create two credentials:
+   - **WhatsApp API** with the access token and the WhatsApp Business Account ID, for the send and media nodes.
+   - **WhatsApp OAuth API** (the trigger's credential) with the app's App ID and App Secret.
+3. Import `whatsapp-bot.json`. Pick the WhatsApp credentials in the trigger, **Get file URL**, **Download file** (predefined credential type WhatsApp API) and **Reply**, and the DocChat service key in the HTTP Request nodes. Publish it.
+4. Meta must reach the trigger over HTTPS, so do this on the server, or locally with the [tunnel](#testing-webhooks-from-the-internet-free-tunnel). When the workflow is published, n8n registers the webhook with Meta and answers Meta's verification request (`hub.challenge`) itself. If you set it up by hand under WhatsApp > Configuration instead, use the trigger's production URL and subscribe to the `messages` field.
+5. In `.env`, set `WHATSAPP_NUMBER` (digits with country code, for the link on the Chat apps page) and the same `DOCCHAT_CHANNEL_WEBHOOK_URL` / `DOCCHAT_CHANNEL_WEBHOOK_SECRET` as for Telegram. `{channel}` becomes `whatsapp`, so "file ready" messages reach `.../webhook/whatsapp-docchat`.
+
+On the Chat apps page, an owner creates a code. The **Open WhatsApp** link opens a chat with the number and `link <code>` already typed.
 
 ## How the signature check works
 

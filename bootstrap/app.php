@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DiscordInteractionController;
 use App\Http\Controllers\WidgetScriptController;
 use App\Http\Middleware\AuthenticateApiKey;
 use App\Http\Middleware\ForgetCurrentWorkspace;
@@ -20,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             Route::get('widget.js', WidgetScriptController::class)->name('widget.script');
+            Route::post('discord/interactions', DiscordInteractionController::class)->middleware('throttle:120,1')->name('discord.interactions');
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

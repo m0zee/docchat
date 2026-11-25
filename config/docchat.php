@@ -77,6 +77,15 @@ return [
         'telegram' => [
             'bot_username' => env('TELEGRAM_BOT_USERNAME'),
         ],
+        'whatsapp' => [
+            // The business number people message, digits only, for the link on the Chat apps page.
+            'number' => env('WHATSAPP_NUMBER'),
+        ],
+        'discord' => [
+            'application_id' => env('DISCORD_APPLICATION_ID'),
+            'public_key' => env('DISCORD_PUBLIC_KEY'),
+            'bot_token' => env('DISCORD_BOT_TOKEN'),
+        ],
         'webhook_url' => env('DOCCHAT_CHANNEL_WEBHOOK_URL'),
         'webhook_secret' => env('DOCCHAT_CHANNEL_WEBHOOK_SECRET'),
     ],

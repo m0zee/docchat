@@ -2,7 +2,7 @@
 
 **Chat with your documents, and get answers you can check.**
 
-DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask questions about them in a chat. Answers come only from your files, stream in word by word, and cite the exact document and page behind each fact, so you can click a source and read the passage yourself. When the answer isn't in your documents, DocChat says so instead of guessing. It's built like a small production product: workspaces for each client with members and invites, a versioned public API with keys, streaming and signed webhooks, an answer cache that saves tokens on repeated questions, usage tracking per channel, an evaluation command that measures retrieval quality, and 250+ tests that run without any API key.
+DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask questions about them in a chat. Answers come only from your files, stream in word by word, and cite the exact document and page behind each fact, so you can click a source and read the passage yourself. When the answer isn't in your documents, DocChat says so instead of guessing. It's built like a small production product: workspaces for each client with members and invites, a website widget for guests, Telegram, WhatsApp and Discord bots that share one answer engine, a versioned public API with keys, streaming and signed webhooks, n8n automations for Google Drive and nightly evals, an answer cache that saves tokens on repeated questions, usage tracking per channel, and 320+ tests that run without any API key.
 
 > This is a portfolio project running on free tiers for testing. Upload test documents only: on the free Gemini tier, Google may use what you send to improve its products.
 
@@ -12,7 +12,7 @@ DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask que
 
 ## Features
 
-- **Upload** PDF, TXT and Markdown up to 10 MB, by picking a file or dragging it in. Files are stored privately and visible only to their owner.
+- **Upload** PDF, TXT and Markdown up to 10 MB, by picking a file or dragging it in. Files are stored privately and visible only inside their workspace.
 - **Background ingestion** on a queue: text is extracted page by page, split into ~800-token chunks with 15% overlap that never cross a page, embedded in batches, and stored in Postgres with pgvector. Rate limits are retried with backoff; permanent errors (a scanned PDF, a bad key) fail fast with a clear message.
 - **Live document list** with a status badge that updates while a file is processed, page and chunk counts, and delete (file, chunks and vectors).
 - **Chat** over all your documents or a chosen few. The top 5 chunks by cosine similarity are retrieved, and anything under a configurable threshold is dropped. If nothing is left, the app answers "I couldn't find that in your documents." **without calling the model**.
@@ -31,7 +31,24 @@ DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask que
 - **n8n automations** ([n8n/](n8n/README.md)): files dropped in a Google Drive folder are ingested automatically (Docs, Sheets and Slides as PDF), deleted Drive files are removed every night, and a nightly eval emails its scores. n8n runs in the same Docker stack with its own database.
 - **Website widget** for guests, the main way visitors ask: one `<script>` tag from **Workspace > Widget** adds a chat bubble (vanilla JS in a Shadow DOM, about 14 KB, streaming, sources, saved history, mobile and dark mode). Its public `dc_pub_` key only asks, only from the websites the owner lists, with a per-visitor rate limit. When the documents have no answer, it shows the owner's handoff email.
 - **Telegram bot** ([setup](n8n/README.md#telegram-bot)): one bot for every workspace. An owner links a chat with a one-time code from **Workspace > Chat apps**; the chat then gets answers with sources from that workspace, keeps its own conversation (`/new` starts over), and can add documents by sending a file. In groups it answers only when mentioned.
+- **Discord** ([setup](docs/discord.md)): `/ask`, `/link`, `/new` and `/unlink` slash commands answered by DocChat itself, with Ed25519-verified requests, deferred answers from the queue, and mentions disabled.
+- **WhatsApp bot** ([setup](n8n/README.md#whatsapp-bot)) on Meta's Cloud API through n8n, linked the same way, replying only inside WhatsApp's 24-hour window.
 - **Eval API:** `POST /api/v1/evals/run` runs an eval set in the background, one case per queued job, and posts signed results to a callback URL.
+
+## Channels
+
+Every channel uses the same `AnswerService`, so retrieval, the refusal rule, citations, the answer cache and usage tracking behave the same everywhere. Answers are formatted per channel (`plain`, `markdown`, `telegram_html`, `whatsapp`, `discord`) and split under each app's message limit.
+
+| Channel | Who asks | How it connects | Setup |
+|---|---|---|---|
+| Web chat | workspace members | Livewire, `wire:stream` | built in |
+| Website widget | guests on the client's site | `<script>` tag, public key locked to listed sites | Workspace > Widget |
+| Public API | the client's own systems | `dc_live_` key, JSON or Server-Sent Events | Workspace > API keys, `/docs/api` |
+| Telegram | anyone in a linked chat | n8n workflow, platform service key | [n8n/README.md](n8n/README.md#telegram-bot) |
+| WhatsApp | anyone who messages the number | n8n workflow, platform service key | [n8n/README.md](n8n/README.md#whatsapp-bot) |
+| Discord | members of a linked server | slash commands to `/discord/interactions` | [docs/discord.md](docs/discord.md) |
+
+One bot per chat app serves every workspace. An owner creates a one-time code under **Workspace > Chat apps**, and the code links that chat or server to the workspace.
 
 ## How it works
 
@@ -132,13 +149,43 @@ curl -N -H "Authorization: Bearer $KEY" \
   "https://your-domain/api/v1/ask/stream?question=How%20long%20can%20I%20keep%20a%20DVD%3F"
 ```
 
+For the website, save **Workspace > Widget** once and paste the snippet it shows:
+
+```html
+<script src="https://your-domain/widget.js" data-key="dc_pub_..." async></script>
+```
+
+Run the eval set and get the results posted back, signed:
+
+```bash
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"eval_set": "sample", "callback_url": "https://example.com/hooks/eval"}' \
+  https://your-domain/api/v1/evals/run
+```
+
 Errors always look like `{"error": {"code": "...", "message": "...", "details": {...}}}`. The full reference, generated with Scramble, is at `/docs/api`.
+
+## Automations (n8n)
+
+n8n runs next to DocChat in the same Docker stack, with its own database, and talks to it only through the public API and signed webhooks. The workflows in [`n8n/`](n8n/README.md) hold no credentials, and a test fails if an export ever does.
+
+| Workflow | What it does |
+|---|---|
+| Google Drive ingest | New or changed files in a Drive folder are uploaded (Google Docs, Sheets and Slides as PDF). When DocChat finishes, a signed webhook triggers an email. |
+| Remove deleted Drive files | Every night, deletes documents whose Drive file is gone, with guards against deleting everything. |
+| Nightly eval | Runs the eval set through `POST /api/v1/evals/run`, waits for the signed callback, and emails the scores. |
+| Telegram bot / WhatsApp bot | One bot for every workspace, linked per chat with a code. |
+
+<!-- Screenshot placeholders: docs/screenshots/n8n-drive-ingest.png, docs/screenshots/n8n-telegram-bot.png -->
 
 ## Security
 
 - **Tenancy.** Every row belongs to a workspace. A global scope limits queries to the current workspace, and the retriever, jobs and API also filter by workspace explicitly, so nothing depends on the scope alone. Tests check each web page and API route across two workspaces.
 - **API keys** are random 40-character secrets, stored only as SHA-256 hashes, with abilities and a per-key rate limit. Revoking one takes effect at once.
 - **Invites** are single use, expire after 7 days, are stored hashed, and only work for the invited email.
+- **Widget keys** (`dc_pub_`) are public by design. They can only ask, only from the websites the owner lists (checked on the server against `Origin`), only in guest conversations named by a random visitor id, and with a rate limit per visitor.
+- **Service keys** (`dc_svc_`) for the shared bots belong to no workspace. They act only in the workspace of a chat that an owner linked with a one-time code (hashed, 15 minutes, single use), named in the `X-DocChat-Link` header.
+- **Discord** requests are verified with Ed25519 over the timestamp and raw body, and anything older than 5 minutes is refused.
 - **Webhooks** carry `X-DocChat-Signature: sha256=<HMAC of the raw body>` and `X-DocChat-Timestamp`. Receivers should verify the HMAC and reject anything older than 5 minutes. Signing secrets are encrypted at rest.
 
 ## Design decisions and trade-offs
@@ -187,11 +234,15 @@ Open http://localhost:8000 and log in as `demo@docchat.test` / `password`. The s
 docker compose exec app composer ci:check   # Pint, PHPStan and the Pest suite
 ```
 
+CI also imports every n8n workflow into the pinned n8n image, builds the production image, and checks the widget in Chromium (`tests/browser/widget.cjs`).
+
 The tests need no API keys: every Gemini, Groq and OpenRouter call is faked, and stray HTTP requests fail the test. They do need the Postgres container, because retrieval is tested against real pgvector queries.
 
 ## Deploy
 
-[`deploy.md`](deploy.md) walks through a free Oracle Cloud Always Free Arm VM with `docker-compose.prod.yml`: app, queue worker, scheduler, n8n, Postgres with pgvector, and Caddy with automatic HTTPS.
+[`deploy.md`](deploy.md) walks through a free Oracle Cloud Always Free Arm VM with `docker-compose.prod.yml`: app, queue worker, scheduler, n8n, Postgres with pgvector, and Caddy with automatic HTTPS. The same HTTPS address serves `/widget.js` and Discord's `/discord/interactions`, and n8n gets its own subdomain.
+
+A short demo script for screen recordings is in [`docs/demo-script.md`](docs/demo-script.md), and [`public/demo-site.html`](public/demo-site.html) is a sample client page that embeds the widget.
 
 ## Stack
 
@@ -201,6 +252,7 @@ Laravel 13, PHP 8.4, Livewire 4 with Flux, Tailwind 4, PostgreSQL 16 with pgvect
 
 - Hybrid search: Postgres full-text plus vectors.
 - Reranking the retrieved chunks before prompting.
+- Billing with Stripe on top of `usage_events`, which already records tokens, cache savings and channel per question.
 - OCR for scanned PDFs, which currently fail with "No extractable text".
 
 ## Screenshots
