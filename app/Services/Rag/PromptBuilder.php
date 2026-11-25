@@ -29,13 +29,20 @@ class PromptBuilder
     /**
      * @param  list<RetrievedChunk>  $chunks
      * @param  iterable<Message>  $history  earlier messages, oldest first
+     * @param  string|null  $style  how to word the answer, such as for a voice call
      * @return list<array{role: string, content: string}>
      */
-    public function build(string $question, array $chunks, iterable $history = []): array
+    public function build(string $question, array $chunks, iterable $history = [], ?string $style = null): array
     {
+        $system = self::SYSTEM_PROMPT;
+
+        if ($style !== null && trim($style) !== '') {
+            $system .= "\n\nStyle: ".trim($style);
+        }
+
         $messages = [[
             'role' => 'system',
-            'content' => self::SYSTEM_PROMPT."\n\nContext:\n\n".$this->context($chunks),
+            'content' => $system."\n\nContext:\n\n".$this->context($chunks),
         ]];
 
         foreach ($this->recentHistory($history) as $message) {

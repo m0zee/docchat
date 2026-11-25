@@ -74,4 +74,53 @@ final class Wav
 
         throw new SpeechException('WAV file without audio data.');
     }
+
+    /**
+     * Mono 16-bit PCM samples (-1..1) as a WAV file.
+     *
+     * @param  list<float>  $samples
+     */
+    public static function fromSamples(array $samples, int $rate = 8000): string
+    {
+        $data = '';
+
+        foreach ($samples as $sample) {
+            $data .= pack('v', (int) round(max(-1.0, min(1.0, $sample)) * 32767) & 0xFFFF);
+        }
+
+        return 'RIFF'.pack('V', 36 + strlen($data)).'WAVE'
+            .'fmt '.pack('VvvVVvv', 16, 1, 1, $rate, $rate * 2, 2, 16)
+            .'data'.pack('V', strlen($data)).$data;
+    }
+
+    /**
+     * A soft, short hold sound for the phone line while an answer is written:
+     * a few quiet sine chords that fade in and out. Made here, so there is no
+     * music file to license.
+     */
+    public static function holdTone(float $seconds = 3.0, int $rate = 8000): string
+    {
+        // A gentle I-vi-IV-V in C, one chord at a time.
+        $chords = [[261.63, 329.63, 392.0], [220.0, 261.63, 329.63], [174.61, 220.0, 261.63], [196.0, 246.94, 293.66]];
+        $total = (int) round($seconds * $rate);
+        $perChord = intdiv($total, count($chords));
+        $samples = [];
+
+        for ($i = 0; $i < $total; $i++) {
+            $chord = $chords[min(count($chords) - 1, intdiv($i, max(1, $perChord)))];
+            $t = $i / $rate;
+            $local = ($i % max(1, $perChord)) / max(1, $perChord);
+            // Each chord swells and fades, so the joins are smooth.
+            $envelope = sin(M_PI * $local) ** 2;
+            $value = 0.0;
+
+            foreach ($chord as $frequency) {
+                $value += sin(2 * M_PI * $frequency * $t);
+            }
+
+            $samples[] = 0.08 * $envelope * $value / count($chord);
+        }
+
+        return self::fromSamples($samples, $rate);
+    }
 }

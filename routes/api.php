@@ -48,6 +48,10 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('end', [CallSessionController::class, 'end'])->name('end');
     });
 
+    // The self-hosted voice for a browser call's own lines (also its goodbye).
+    Route::post('call/speech', [CallSessionController::class, 'speech'])
+        ->middleware(['call.token:ended', 'throttle:calls'])->name('call.speech');
+
     Route::middleware(['api.key:live,service', 'api.workspace'])->group(function () {
         Route::get('workspace', WorkspaceController::class)->name('workspace');
 

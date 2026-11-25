@@ -13,6 +13,7 @@ use App\Services\Embedding\CachingEmbeddingProvider;
 use App\Services\Embedding\GeminiEmbeddingProvider;
 use App\Services\Voice\GroqSpeechToText;
 use App\Services\Voice\GroqTextToSpeech;
+use App\Services\Voice\KokoroTextToSpeech;
 use App\Support\CurrentWorkspace;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
@@ -66,7 +67,9 @@ class DocChatServiceProvider extends ServiceProvider
             };
         });
 
-        $this->app->bind(TextToSpeech::class, GroqTextToSpeech::class);
+        $this->app->bind(TextToSpeech::class, fn (): TextToSpeech => config('docchat.voice.tts.driver') === 'kokoro'
+            ? $this->app->make(KokoroTextToSpeech::class)
+            : $this->app->make(GroqTextToSpeech::class));
 
         $this->app->bind(ChatProvider::class, function (): ChatProvider {
             $driver = (string) config('docchat.chat.driver');

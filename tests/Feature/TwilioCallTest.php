@@ -87,7 +87,7 @@ test('an inbound call to the workspace number is greeted and listened to', funct
         ->and($call->conversation->channel)->toBe(ConversationChannel::Phone)
         ->and((string) $xml->Gather['input'])->toBe('speech')
         ->and((string) $xml->Gather['action'])->toBe('https://docchat.test/twilio/voice/calls/'.$call->id.'/gather')
-        ->and((string) $xml->Gather->Say)->toContain('Harbor & Co')->toContain('automated assistant');
+        ->and((string) $xml->Gather->Say)->toContain('Harbor & Co')->toContain('virtual assistant');
 
     // Twilio retrying the same call does not make a second one.
     twilioPost('twilio/voice/inbound', ['CallSid' => 'CA100', 'From' => '+923001234567', 'To' => '+15005550006'])->assertOk();
@@ -104,13 +104,27 @@ test('speech results are answered from the documents', function () {
     twilioPost('twilio/voice/inbound', ['CallSid' => 'CA1', 'From' => '+923001234567', 'To' => '+15005550006']);
     $call = Call::query()->withoutGlobalScopes()->sole();
 
+    // The answer is written in a job; meanwhile the caller hears a filler and the hold sound.
     $response = twilioPost('twilio/voice/calls/'.$call->id.'/gather', ['CallSid' => 'CA1', 'SpeechResult' => 'When are you open?', 'Confidence' => '0.9'])->assertOk();
     $xml = simplexml_load_string($response->getContent());
+    $next = (string) $xml->Redirect;
 
+    expect((string) $xml->Say)->toBe('Hmm, let me check.')
+        ->and((string) $xml->Play)->toBe('https://docchat.test/twilio/voice/hold.wav')
+        ->and($next)->toStartWith('https://docchat.test/twilio/voice/calls/'.$call->id.'/reply/')->toEndWith('?attempt=1');
+
+    // Not ready yet: the hold sound again, no second filler.
+    $path = substr($next, strlen('https://docchat.test/'));
+    $xml = simplexml_load_string(twilioPost($path, ['CallSid' => 'CA1'])->getContent());
+    expect((string) $xml->Say)->toBe('')->and((string) $xml->Play)->not->toBe('')->and((string) $xml->Redirect)->toEndWith('?attempt=2');
+
+    $this->artisan('queue:work', ['--once' => true, '--stop-when-empty' => true]);
+
+    $xml = simplexml_load_string(twilioPost($path, ['CallSid' => 'CA1'])->getContent());
     expect((string) $xml->Gather->Say)->toBe('Open 9 to 5.');
 
     $response = twilioPost('twilio/voice/calls/'.$call->id.'/gather', ['CallSid' => 'CA1', 'SpeechResult' => 'Goodbye'])->assertOk();
-    expect($response->getContent())->toContain('Thank you for calling. Goodbye!')->toContain('<Hangup/>');
+    expect($response->getContent())->toContain('Thanks for calling. Bye for now!')->toContain('<Hangup/>');
 });
 
 test('a webhook for one call cannot steer another', function () {
@@ -170,7 +184,7 @@ test('an outbound call is placed through Twilio\'s API', function () {
 
     // When it is picked up, the agent opens with the purpose and the opt-out line.
     $response = twilioPost('twilio/voice/calls/'.$call->id.'/answer', ['CallSid' => 'CA777', 'CallStatus' => 'in-progress'])->assertOk();
-    expect($response->getContent())->toContain('Hi Sara, this is an automated assistant calling for Harbor &amp; Co about your card.')->toContain('stop calling');
+    expect($response->getContent())->toContain('Hi Sara, this is Ava, a virtual assistant calling for Harbor &amp; Co about your card.')->toContain('stop calling');
 });
 
 test('outbound calls need consent, no opt-out and the calling hours', function (array $contact, ?string $hours, string $reason) {

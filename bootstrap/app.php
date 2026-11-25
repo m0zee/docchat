@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DiscordInteractionController;
+use App\Http\Controllers\Twilio\TwilioAudioController;
 use App\Http\Controllers\Twilio\TwilioVoiceController;
 use App\Http\Controllers\VoiceCallScriptController;
 use App\Http\Controllers\WidgetScriptController;
@@ -35,6 +36,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 Route::post('calls/{call}/answer', [TwilioVoiceController::class, 'answer'])->whereNumber('call')->name('answer');
                 Route::post('calls/{call}/gather', [TwilioVoiceController::class, 'gather'])->whereNumber('call')->name('gather');
                 Route::post('calls/{call}/status', [TwilioVoiceController::class, 'status'])->whereNumber('call')->name('status');
+                Route::post('calls/{call}/reply/{turn}', [TwilioVoiceController::class, 'reply'])->whereNumber('call')->where('turn', '[A-Za-z0-9]{16}')->name('reply');
+            });
+
+            // Audio Twilio fetches for <Play>: the hold sound, and Kokoro clips
+            // behind our own signature (Twilio doesn't sign media requests).
+            Route::middleware('throttle:240,1')->prefix('twilio/voice')->name('twilio.voice.')->group(function (): void {
+                Route::get('hold.wav', [TwilioAudioController::class, 'hold'])->name('hold');
+                Route::get('audio/{clip}', [TwilioAudioController::class, 'clip'])->where('clip', '[a-f0-9]{64}')->name('audio');
             });
         },
     )

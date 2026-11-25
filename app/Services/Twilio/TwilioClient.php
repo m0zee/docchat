@@ -3,6 +3,7 @@
 namespace App\Services\Twilio;
 
 use App\Models\Call;
+use App\Services\Calls\VoiceProfile;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -26,21 +27,32 @@ class TwilioClient
             throw new RuntimeException('Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER in .env.');
         }
 
+        $fields = [
+            'To' => $to,
+            'From' => $from,
+            'Url' => TwilioSignature::url('twilio/voice/calls/'.$call->id.'/answer'),
+            'Method' => 'POST',
+            'StatusCallback' => TwilioSignature::url('twilio/voice/calls/'.$call->id.'/status'),
+            'StatusCallbackMethod' => 'POST',
+            'Timeout' => 30,
+            'TimeLimit' => Call::maxSeconds(),
+        ];
+
+        // Answering machine detection (uses Twilio credit). To leave a
+        // message, wait for the beep; to hang up, the first guess is enough.
+        $voicemail = VoiceProfile::for($call->workspace)['voicemail'];
+
+        if ($voicemail !== 'off') {
+            $fields['MachineDetection'] = $voicemail === 'leave_message' ? 'DetectMessageEnd' : 'Enable';
+            $fields['MachineDetectionTimeout'] = 15;
+        }
+
         try {
             $response = Http::asForm()
                 ->withBasicAuth($sid, (string) $config['auth_token'])
                 ->acceptJson()
                 ->timeout(20)
-                ->post(rtrim((string) $config['base_url'], '/').'/Accounts/'.rawurlencode($sid).'/Calls.json', [
-                    'To' => $to,
-                    'From' => $from,
-                    'Url' => TwilioSignature::url('twilio/voice/calls/'.$call->id.'/answer'),
-                    'Method' => 'POST',
-                    'StatusCallback' => TwilioSignature::url('twilio/voice/calls/'.$call->id.'/status'),
-                    'StatusCallbackMethod' => 'POST',
-                    'Timeout' => 30,
-                    'TimeLimit' => Call::maxSeconds(),
-                ]);
+                ->post(rtrim((string) $config['base_url'], '/').'/Accounts/'.rawurlencode($sid).'/Calls.json', $fields);
         } catch (ConnectionException $exception) {
             throw new RuntimeException('Twilio could not be reached.', 0, $exception);
         }

@@ -11,7 +11,7 @@ class FakeSpeechToText implements SpeechToText
     /** @var list<array{bytes: int, filename: string, language: string|null}> */
     public array $calls = [];
 
-    public function __construct(public string $text = 'When do you open?', public ?Throwable $throw = null) {}
+    public function __construct(public string $text = 'When do you open?', public ?Throwable $throw = null, public ?string $detected = 'en') {}
 
     public function transcribe(string $audio, string $filename, ?string $language = null): Transcript
     {
@@ -21,6 +21,6 @@ class FakeSpeechToText implements SpeechToText
             throw $this->throw;
         }
 
-        return new Transcript($this->text, 2.5, 'en');
+        return new Transcript($this->text, 2.5, $this->detected);
     }
 }

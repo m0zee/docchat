@@ -141,12 +141,24 @@ return [
         ],
         'replies' => (bool) env('DOCCHAT_VOICE_REPLIES', false),
         'tts' => [
+            // Voice replies in the bots: groq (Orpheus) or kokoro (self-hosted).
+            'driver' => env('DOCCHAT_TTS_DRIVER', 'groq'),
             'model' => env('DOCCHAT_TTS_MODEL', 'canopylabs/orpheus-v1-english'),
             'voice' => env('DOCCHAT_TTS_VOICE', 'hannah'),
             'base_url' => env('DOCCHAT_TTS_BASE_URL', env('DOCCHAT_GROQ_BASE_URL', 'https://api.groq.com/openai/v1')),
             'api_key' => env('GROQ_API_KEY'),
             'max_chars' => (int) env('DOCCHAT_TTS_MAX_CHARS', 600),
             'ffmpeg' => env('DOCCHAT_FFMPEG', 'ffmpeg'),
+        ],
+        // Kokoro: an open, natural-sounding voice you host yourself (the
+        // "kokoro" service in docker-compose.yml, profile "voice"). Free and
+        // without daily limits. Empty turns it off, and calls use the
+        // browser's own voices and Twilio's voices instead.
+        'kokoro' => [
+            'url' => env('DOCCHAT_KOKORO_URL'),
+            'voice' => env('DOCCHAT_KOKORO_VOICE', 'af_heart'),
+            'timeout' => (int) env('DOCCHAT_KOKORO_TIMEOUT', 30),
+            'max_chars' => (int) env('DOCCHAT_KOKORO_MAX_CHARS', 600),
         ],
     ],
 
@@ -161,6 +173,9 @@ return [
         'timezone' => env('DOCCHAT_CALLING_TIMEZONE', env('APP_TIMEZONE', 'UTC')),
         'link_valid_days' => (int) env('DOCCHAT_CALL_LINK_DAYS', 7),
         'rate_limit_per_minute' => (int) env('DOCCHAT_CALL_RATE_LIMIT_PER_MINUTE', 30),
+        // Phone answers run in a job; the line plays a filler and a hold
+        // sound while it waits, for at most this many seconds.
+        'phone_answer_wait_seconds' => (int) env('DOCCHAT_PHONE_ANSWER_WAIT', 25),
         'twilio' => [
             'account_sid' => env('TWILIO_ACCOUNT_SID'),
             'auth_token' => env('TWILIO_AUTH_TOKEN'),
@@ -169,9 +184,6 @@ return [
             'base_url' => env('TWILIO_API_BASE_URL', 'https://api.twilio.com/2010-04-01'),
             // The public https address Twilio calls, if APP_URL is not it.
             'webhook_base_url' => env('TWILIO_WEBHOOK_BASE_URL'),
-            'language' => env('TWILIO_SPEECH_LANGUAGE', 'en-US'),
-            // Empty uses Twilio's default voice. Polly and Google voices may cost extra.
-            'voice' => env('TWILIO_VOICE'),
         ],
     ],
 

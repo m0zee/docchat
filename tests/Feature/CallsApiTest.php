@@ -62,7 +62,7 @@ test('a website visitor starts a call and hears the greeting with an AI disclosu
     $data = startWidgetCall();
 
     expect($data['token'])->toStartWith('dc_call_')
-        ->and($data['greeting'])->toContain('Harbor Library')->toContain('automated assistant')
+        ->and($data['greeting'])->toBe("Hi, this is Ava, Harbor Library's virtual assistant. How can I help you today?")
         ->and($data['max_seconds'])->toBe(600);
 
     $call = Call::query()->withoutGlobalScopes()->find($data['call_id']);
@@ -233,7 +233,7 @@ test('an outbound call link is answered, then talks in the contact\'s workspace'
 
     $this->withToken($token)->postJson('/api/v1/call/answer')->assertOk()
         ->assertJsonPath('data.purpose', 'your library card renewal')
-        ->assertJsonPath('data.greeting', 'Hi Sara, this is an automated assistant calling for Harbor Library about your library card renewal. I can answer your questions from our documents. What would you like to know? If you would rather not get these calls, just say stop calling.');
+        ->assertJsonPath('data.greeting', "Hi Sara, this is Ava, a virtual assistant calling for Harbor Library about your library card renewal. I can answer your questions from our documents. What would you like to know? If you'd rather not get these calls, just say stop calling.");
 
     callTurn($token, ['text' => 'Please stop calling me.'])->assertJsonPath('data.reply', CallAgent::OPTED_OUT)->assertJsonPath('data.ended', true);
 

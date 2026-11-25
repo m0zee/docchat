@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Call;
 use App\Services\Calls\CallAgent;
 use App\Services\Calls\CallSettings;
+use App\Services\Calls\VoiceProfile;
 use App\Support\Api\ApiError;
 use App\Support\CurrentWorkspace;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +25,12 @@ class CallController extends Controller
      * reply holds a call token (dc_call_...) for the call's other routes and
      * the greeting to read aloud. Calls end after the time limit.
      *
-     * @response 201 array{data: array{call_id: int, token: string, greeting: string, max_seconds: int}}
+     * voice says how the call should sound: the engine ("browser" voices or
+     * the self-hosted "kokoro" voice through POST /call/speech), language,
+     * voice gender and age, rate and pitch, pace, fillers, hold music,
+     * background sound and whether the caller may interrupt.
+     *
+     * @response 201 array{data: array{call_id: int, token: string, greeting: string, max_seconds: int, voice: array<string, mixed>}}
      */
     public function store(Request $request, CurrentWorkspace $current, CallAgent $agent): JsonResponse
     {
@@ -51,12 +57,14 @@ class CallController extends Controller
 
         $token = $call->issueToken();
         $greeting = $agent->begin($call);
+        CallAgent::remember($call, $greeting);
 
         return new JsonResponse(['data' => [
             'call_id' => $call->id,
             'token' => $token,
             'greeting' => $greeting,
             'max_seconds' => Call::maxSeconds(),
+            'voice' => VoiceProfile::client(VoiceProfile::for($workspace)),
         ]], 201);
     }
 }

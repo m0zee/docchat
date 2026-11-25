@@ -8,10 +8,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Middleware\AuthenticateCallToken;
 use App\Models\Call;
 use App\Services\Calls\CallAgent;
+use App\Services\Calls\VoiceProfile;
+use App\Services\Voice\KokoroTextToSpeech;
 use App\Services\Voice\Transcriber;
 use App\Support\Api\ApiError;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Http\UploadedFile;
 
 /**
@@ -27,17 +30,19 @@ class CallSessionController extends Controller
      * Opens an outbound call link (or a test call) and returns the opening
      * line to read aloud.
      *
-     * @response array{data: array{greeting: string, purpose: string|null, max_seconds: int}}
+     * @response array{data: array{greeting: string, purpose: string|null, max_seconds: int, voice: array<string, mixed>}}
      */
     public function answer(Request $request): JsonResponse
     {
         $call = AuthenticateCallToken::call($request);
         $greeting = $this->agent->begin($call);
+        CallAgent::remember($call, $greeting);
 
         return new JsonResponse(['data' => [
             'greeting' => $greeting,
             'purpose' => $call->purpose,
             'max_seconds' => Call::maxSeconds(),
+            'voice' => VoiceProfile::client(VoiceProfile::for($call->workspace), $call->language),
         ]]);
     }
 
@@ -47,9 +52,10 @@ class CallSessionController extends Controller
      * Send what the caller said as recorded audio (multipart "audio": webm,
      * ogg, mp3, wav or m4a) or as "text". Nothing at all counts as silence.
      * The reply is the agent's answer to read aloud; when ended is true the
-     * agent hung up after it.
+     * agent hung up after it. lang is the language to speak in (it follows
+     * the caller when auto language detection is on), with its fillers.
      *
-     * @response array{data: array{heard: string, reply: string, citations: list<array<string, mixed>>, refused: bool, ended: bool, error: string|null}}
+     * @response array{data: array{heard: string, reply: string, citations: list<array<string, mixed>>, refused: bool, ended: bool, error: string|null, lang: string, fillers: list<string>, engine: string}}
      */
     public function turn(Request $request, Transcriber $transcriber): JsonResponse
     {
@@ -66,27 +72,38 @@ class CallSessionController extends Controller
 
         $heard = trim((string) $request->input('text', ''));
         $audio = $request->file('audio');
+        $profile = VoiceProfile::for($call->workspace);
+        $detected = null;
 
         if ($heard === '' && $audio instanceof UploadedFile) {
+            // Auto detection lets Whisper find the language; otherwise tell it.
+            $hint = $profile['auto_language'] ? null : VoiceProfile::LANGUAGES[$profile['language']]['whisper'];
+
             try {
-                $heard = $transcriber->upload($call->workspace, $audio)->text;
+                $transcript = $transcriber->upload($call->workspace, $audio, $hint);
+                $heard = $transcript->text;
+                $detected = VoiceProfile::languageCode($transcript->language);
             } catch (SpeechException $exception) {
                 report($exception);
+                $text = $this->agent->phrase($call, $exception->retryable ? 'speech_retry' : 'speech_down');
+                CallAgent::remember($call, $text);
 
                 return new JsonResponse(['data' => [
                     'heard' => '',
-                    'reply' => $exception->retryable
-                        ? 'Sorry, I could not hear that properly. Please say it again, or type it.'
-                        : 'Sorry, voice is not working right now. Please type your question.',
+                    'reply' => $text,
                     'citations' => [],
                     'refused' => false,
                     'ended' => false,
                     'error' => $exception->retryable ? 'speech_busy' : 'speech_unavailable',
+                    ...$this->voice($call, $profile),
                 ]]);
             }
+        } elseif ($heard !== '' && $profile['auto_language']) {
+            $detected = self::guessScript($heard);
         }
 
-        $reply = $this->agent->respond($call, self::clean($heard));
+        $reply = $this->agent->respond($call, self::clean($heard), $detected);
+        CallAgent::remember($call, $reply->text);
 
         return new JsonResponse(['data' => [
             'heard' => self::clean($heard),
@@ -99,7 +116,75 @@ class CallSessionController extends Controller
             'refused' => $reply->refused,
             'ended' => $reply->end,
             'error' => null,
+            ...$this->voice($call, $profile),
         ]]);
+    }
+
+    /**
+     * Speak a line of this call with the self-hosted Kokoro voice.
+     *
+     * Only the call's own recent lines (or a filler) can be spoken, so the
+     * call token can't be used as a free text-to-speech service.
+     *
+     * @response 200 string audio/mpeg
+     */
+    public function speech(Request $request, KokoroTextToSpeech $kokoro): Response|JsonResponse
+    {
+        $call = AuthenticateCallToken::call($request);
+        $request->validate(['text' => ['required', 'string', 'max:700']]);
+        $profile = VoiceProfile::for($call->workspace);
+        $voice = VoiceProfile::kokoroVoice($profile, $call->language);
+        $text = trim((string) $request->input('text'));
+
+        if (! KokoroTextToSpeech::configured() || $voice === null) {
+            return ApiError::response(404, 'voice_unavailable', 'The Kokoro voice is not set up for this language.');
+        }
+
+        if (! $this->agent->maySpeak($call, $text)) {
+            return ApiError::response(422, 'not_this_call', 'Only this call\'s own lines can be spoken.');
+        }
+
+        try {
+            $audio = $kokoro->speakAs($text, $voice, VoiceProfile::prosody($profile)['rate']);
+        } catch (SpeechException $exception) {
+            report($exception);
+
+            return ApiError::response($exception->retryable ? 503 : 502, 'voice_failed', 'The voice could not be made. The browser voice will be used.');
+        }
+
+        return new Response($audio, 200, ['Content-Type' => 'audio/mpeg', 'Cache-Control' => 'private, max-age=600']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array{lang: string, fillers: list<string>, engine: string}
+     */
+    private function voice(Call $call, array $profile): array
+    {
+        $client = VoiceProfile::client($profile, $call->language);
+
+        return ['lang' => $client['lang'], 'fillers' => $client['fillers'], 'engine' => $client['engine']];
+    }
+
+    /**
+     * A typed message's language, from its script (Devanagari, Arabic). Latin
+     * text can't be told apart this way, so it keeps the call's language.
+     */
+    public static function guessScript(string $text): ?string
+    {
+        if (preg_match('/\p{Devanagari}/u', $text) === 1) {
+            return 'hi';
+        }
+
+        if (preg_match('/[\x{0679}\x{0688}\x{0691}\x{06BA}\x{06BE}\x{06C1}\x{06D2}]/u', $text) === 1) {
+            return 'ur';
+        }
+
+        if (preg_match('/\p{Arabic}/u', $text) === 1) {
+            return 'ar';
+        }
+
+        return null;
     }
 
     /**

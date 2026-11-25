@@ -21,7 +21,11 @@ class AuthenticateCallToken
 
     public function __construct(private CurrentWorkspace $current) {}
 
-    public function handle(Request $request, Closure $next): Response
+    /**
+     * "call.token:ended" also lets a call that ended in the last two minutes
+     * through, so its last line ("goodbye") can still be spoken.
+     */
+    public function handle(Request $request, Closure $next, string $mode = ''): Response
     {
         $plain = (string) $request->bearerToken();
         $call = $plain === '' ? null : Call::findByToken($plain);
@@ -30,7 +34,9 @@ class AuthenticateCallToken
             return ApiError::response(401, 'invalid_call', 'This call link is not valid.');
         }
 
-        if ($call->status->isFinished()) {
+        $recentlyEnded = $mode === 'ended' && $call->ended_at !== null && $call->ended_at->gt(now()->subMinutes(2));
+
+        if ($call->status->isFinished() && ! $recentlyEnded) {
             return ApiError::response(409, 'call_ended', 'This call has ended.');
         }
 

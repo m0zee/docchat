@@ -39,7 +39,7 @@
                                 }).then(function (r) {
                                     return r.json().then(function (body) {
                                         if (!r.ok) throw new Error(body && body.error ? body.error.message : 'The call could not start.');
-                                        return { token: token, greeting: body.data.greeting, max_seconds: body.data.max_seconds };
+                                        return Object.assign({}, body.data, { token: token });
                                     });
                                 });
                             },

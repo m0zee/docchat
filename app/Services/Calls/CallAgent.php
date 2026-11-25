@@ -10,6 +10,7 @@ use App\Models\Conversation;
 use App\Services\Rag\AnswerService;
 use App\Services\Voice\SpokenText;
 use App\Support\CurrentWorkspace;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -20,11 +21,13 @@ use Illuminate\Support\Str;
  */
 class CallAgent
 {
+    // The English lines, as constants for code and tests. Other languages
+    // and variants live in Phrases.
     public const NOT_HEARD = "Sorry, I didn't catch that. What would you like to know?";
 
     public const SILENT_GOODBYE = "I can't hear anything, so I'll end the call now. Goodbye.";
 
-    public const GOODBYE = 'Thank you for calling. Goodbye!';
+    public const GOODBYE = 'Thanks for calling. Bye for now!';
 
     public const OPTED_OUT = "Understood. You won't get any more calls from us. Goodbye.";
 
@@ -64,58 +67,101 @@ class CallAgent
             return CallSettings::greeting($workspace);
         }
 
+        $profile = VoiceProfile::for($workspace);
+        $language = $this->language($call);
         $name = trim(Str::before((string) $call->contact?->name, ' '));
-        $line = 'Hi'.($name !== '' ? ' '.$name : '').', this is an automated assistant calling for '.$workspace->name;
-        $line .= filled($call->purpose) ? ' about '.rtrim((string) $call->purpose, '.').'.' : '.';
-        $line .= ' '.(filled($call->opening)
-            ? trim((string) $call->opening)
-            : 'I can answer your questions from our documents. What would you like to know?');
 
-        return $line.' If you would rather not get these calls, just say stop calling.';
+        $line = Phrases::get($language, 'outbound', [
+            'first' => $name !== '' ? ' '.$name : '',
+            'name' => $profile['assistant_name'],
+            'workspace' => $workspace->name,
+            'about' => $this->about($call, $language),
+        ]);
+
+        $line .= ' '.(filled($call->opening) ? trim((string) $call->opening) : Phrases::get($language, 'outbound_default'));
+
+        return $line.' '.Phrases::get($language, 'opt_out_hint');
     }
 
     /**
-     * Answer what the caller said.
+     * What to leave on an answering machine (outbound phone calls).
      */
-    public function respond(Call $call, string $heard): CallReply
+    public function voicemail(Call $call): string
+    {
+        $profile = VoiceProfile::for($call->workspace);
+        $custom = trim((string) $profile['voicemail_message']);
+        $language = $this->language($call);
+
+        if ($custom !== '') {
+            return Phrases::discloses($custom) ? $custom : Phrases::get($language, 'disclosure').' '.$custom;
+        }
+
+        return Phrases::get($language, 'voicemail', [
+            'name' => $profile['assistant_name'],
+            'workspace' => $call->workspace->name,
+            'about' => $this->about($call, $language),
+        ]);
+    }
+
+    /**
+     * A line in the call's language, such as "fillers" or "speech_retry".
+     */
+    public function phrase(Call $call, string $key, int $turn = 0): string
+    {
+        return Phrases::get($this->language($call), $key, [], $turn);
+    }
+
+    /**
+     * Answer what the caller said. $detected is the language speech
+     * recognition heard ("en", "ur"), used when auto detection is on.
+     */
+    public function respond(Call $call, string $heard, ?string $detected = null): CallReply
     {
         $this->current->set($call->workspace);
         $heard = trim(Str::limit($heard, 1000, ''));
+        $profile = VoiceProfile::for($call->workspace);
 
         if ($heard === '') {
             return $this->silence($call);
         }
 
+        if ($profile['auto_language'] && $detected !== null && in_array($detected, Phrases::LANGUAGES, true)) {
+            $call->language = $detected;
+        }
+
+        $language = $this->language($call);
         $conversation = $this->conversation($call);
         $call->forceFill(['turns' => $call->turns + 1, 'silences' => 0])->save();
 
-        if (self::isOptOut($heard)) {
+        if (Phrases::isOptOut($heard)) {
             $this->hear($conversation, $heard);
             $call->contact?->optOut();
-            $this->say($conversation, self::OPTED_OUT);
+            $text = Phrases::get($language, 'opted_out');
+            $this->say($conversation, $text);
             $call->finish(CallStatus::Completed, 'opted_out');
 
-            return new CallReply(self::OPTED_OUT, end: true);
+            return new CallReply($text, end: true);
         }
 
-        if (self::isGoodbye($heard)) {
+        if (Phrases::isGoodbye($heard)) {
             $this->hear($conversation, $heard);
-            $this->say($conversation, self::GOODBYE);
+            $text = Phrases::get($language, 'goodbye');
+            $this->say($conversation, $text);
             $call->finish(CallStatus::Completed, 'caller_goodbye');
 
-            return new CallReply(self::GOODBYE, end: true);
+            return new CallReply($text, end: true);
         }
 
-        $message = $this->answers->answer($conversation, $heard);
+        $message = $this->answers->answer($conversation, $heard, style: VoiceProfile::answerStyle($profile, $call->language));
         $max = max(80, (int) config('docchat.calls.max_spoken_chars'));
         $refused = $message->content === AnswerService::NOT_FOUND;
 
         if ($message->error !== null) {
             Log::channel('docchat')->warning('call answer failed', ['call_id' => $call->id, 'error' => $message->error]);
-            $text = self::TROUBLE;
+            $text = Phrases::get($language, 'trouble');
         } elseif ($refused) {
             $handoff = trim((string) CallSettings::for($call->workspace)['handoff']);
-            $text = "I couldn't find that in our documents.".($handoff !== '' ? ' '.$handoff : '').' Is there anything else I can help with?';
+            $text = Phrases::get($language, 'not_found').($handoff !== '' ? ' '.$handoff : '').' '.Phrases::get($language, 'anything_else');
         } else {
             $text = SpokenText::from($message->content, $max);
         }
@@ -123,7 +169,7 @@ class CallAgent
         if ($call->turns >= max(1, (int) config('docchat.calls.max_turns')) || $call->isOverTime()) {
             $call->finish(CallStatus::Completed, 'limit');
 
-            return new CallReply($text.' '.self::TIME_UP, end: true, citations: $message->citations ?? [], refused: $refused);
+            return new CallReply($text.' '.Phrases::get($language, 'time_up'), end: true, citations: $message->citations ?? [], refused: $refused);
         }
 
         return new CallReply($text, citations: $message->citations ?? [], refused: $refused);
@@ -135,15 +181,17 @@ class CallAgent
     public function silence(Call $call): CallReply
     {
         $call->forceFill(['silences' => $call->silences + 1])->save();
+        $language = $this->language($call);
 
         if ($call->silences >= self::MAX_SILENCES) {
-            $this->say($this->conversation($call), self::SILENT_GOODBYE);
+            $text = Phrases::get($language, 'silent_goodbye');
+            $this->say($this->conversation($call), $text);
             $call->finish(CallStatus::Completed, 'silence');
 
-            return new CallReply(self::SILENT_GOODBYE, end: true);
+            return new CallReply($text, end: true);
         }
 
-        return new CallReply(self::NOT_HEARD);
+        return new CallReply(Phrases::get($language, 'not_heard', [], $call->turns));
     }
 
     public function hangUp(Call $call, string $reason = 'caller_hung_up'): void
@@ -153,20 +201,66 @@ class CallAgent
 
     public static function isGoodbye(string $heard): bool
     {
-        $words = preg_split('/\s+/u', trim($heard)) ?: [];
-
-        return count($words) <= 7 && (bool) preg_match(
-            "/\b(bye|good ?bye|that'?s all|that is all|nothing else|no,? thanks?|no,? thank you|hang up|end (the )?call)\b/iu",
-            $heard,
-        );
+        return Phrases::isGoodbye($heard);
     }
 
     public static function isOptOut(string $heard): bool
     {
-        return (bool) preg_match(
-            "/\b(stop calling|don'?t call|do not call|never call|remove me|unsubscribe|opt (me )?out)\b/iu",
-            $heard,
-        );
+        return Phrases::isOptOut($heard);
+    }
+
+    /**
+     * Note what the assistant is about to say on a browser call, so the voice
+     * endpoint only speaks the call's own lines (not any text it is sent).
+     */
+    public static function remember(Call $call, string $text): void
+    {
+        $key = 'call-spoken:'.$call->id;
+        $lines = Cache::get($key, []);
+        $lines = array_slice([...(is_array($lines) ? $lines : []), $text], -8);
+        Cache::put($key, $lines, now()->addSeconds(Call::maxSeconds() + 600));
+    }
+
+    /**
+     * May the voice endpoint speak this text on this call? Any part of a
+     * recent line, or a filler.
+     */
+    public function maySpeak(Call $call, string $text): bool
+    {
+        $text = trim($text);
+
+        if ($text === '') {
+            return false;
+        }
+
+        foreach (Phrases::LANGUAGES as $language) {
+            if (in_array($text, Phrases::all($language, 'fillers'), true)) {
+                return true;
+            }
+        }
+
+        foreach ((array) Cache::get('call-spoken:'.$call->id, []) as $line) {
+            if (is_string($line) && str_contains($line, $text)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The language of the call's fixed lines.
+     */
+    public function language(Call $call): string
+    {
+        return VoiceProfile::phraseLanguage(VoiceProfile::for($call->workspace), $call->language);
+    }
+
+    private function about(Call $call, string $language): string
+    {
+        return filled($call->purpose)
+            ? Phrases::get($language, 'about', ['purpose' => rtrim(trim((string) $call->purpose), '.')])
+            : '';
     }
 
     private function conversation(Call $call): Conversation

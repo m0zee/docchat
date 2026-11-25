@@ -12,6 +12,10 @@ use App\Models\Message;
 use App\Models\Workspace;
 use App\Services\Calls\CallingHours;
 use App\Services\Calls\CallSettings;
+use App\Services\Calls\Phrases;
+use App\Services\Calls\VoiceProfile;
+use App\Exceptions\SpeechException;
+use App\Services\Voice\KokoroTextToSpeech;
 use App\Support\CurrentWorkspace;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
@@ -32,6 +36,13 @@ new #[Title('Calls')] class extends Component {
     public string $handoff = '';
 
     public string $phoneNumber = '';
+
+    /**
+     * Voice and personality (VoiceProfile).
+     *
+     * @var array<string, mixed>
+     */
+    public array $voice = [];
 
     // New contact
     public string $contactName = '';
@@ -69,6 +80,147 @@ new #[Title('Calls')] class extends Component {
         $this->greeting = (string) $settings['greeting'];
         $this->handoff = (string) $settings['handoff'];
         $this->phoneNumber = (string) $settings['phone_number'];
+        $this->voice = $this->voiceForm(VoiceProfile::for($this->workspace));
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    private function voiceForm(array $profile): array
+    {
+        $profile['speed'] = number_format((float) $profile['speed'], 2);
+        $profile['pitch'] = number_format((float) $profile['pitch'], 2);
+        $profile['browser_voice'] = (string) $profile['browser_voice'];
+        $profile['voicemail_message'] = (string) $profile['voicemail_message'];
+
+        return $profile;
+    }
+
+    public function saveVoice(): void
+    {
+        Gate::authorize('manage', $this->workspace);
+
+        $rules = collect(VoiceProfile::rules())->mapWithKeys(fn ($rule, $key) => ['voice.'.$key => $rule])->all();
+        $this->validate($rules, [], collect(VoiceProfile::rules())->keys()->mapWithKeys(fn ($key) => ['voice.'.$key => str_replace('_', ' ', $key)])->all());
+
+        if ($this->voice['web_engine'] === 'kokoro' && ! VoiceProfile::kokoroAvailable()) {
+            $this->addError('voice.web_engine', __('The self-hosted voice is not set up on this server (DOCCHAT_KOKORO_URL).'));
+
+            return;
+        }
+
+        VoiceProfile::save($this->workspace, $this->voice);
+        unset($this->workspace);
+        $this->voice = $this->voiceForm(VoiceProfile::for($this->workspace));
+        Flux::toast(variant: 'success', text: __('Voice settings saved.'));
+    }
+
+    /**
+     * The line the preview buttons read, in the chosen language and name.
+     */
+    public function sampleLine(): string
+    {
+        $language = VoiceProfile::LANGUAGES[$this->voice['language'] ?? 'en-US']['phrases'] ?? 'en';
+        $name = trim((string) ($this->voice['assistant_name'] ?? '')) ?: VoiceProfile::DEFAULTS['assistant_name'];
+
+        return Phrases::get($language, 'greeting', ['name' => $name, 'workspace' => $this->workspace->name]);
+    }
+
+    /**
+     * Speak the sample line with the chosen Kokoro voice. Returns a data URL.
+     */
+    public function previewKokoro(): ?string
+    {
+        Gate::authorize('manage', $this->workspace);
+
+        if (! VoiceProfile::kokoroAvailable()) {
+            return null;
+        }
+
+        $profile = array_merge(VoiceProfile::for($this->workspace), array_intersect_key($this->voice, VoiceProfile::DEFAULTS));
+        $voice = VoiceProfile::kokoroVoice($profile);
+
+        if ($voice === null || ! array_key_exists((string) $this->voice['kokoro_voice'], VoiceProfile::KOKORO_VOICES)) {
+            Flux::toast(variant: 'warning', text: __('The self-hosted voice has no voice for this language yet. Calls in it use the browser voice.'));
+
+            return null;
+        }
+
+        try {
+            $audio = app(KokoroTextToSpeech::class)->speakAs($this->sampleLine(), $voice, VoiceProfile::prosody($profile)['rate']);
+        } catch (SpeechException $exception) {
+            Flux::toast(variant: 'danger', text: $exception->getMessage());
+
+            return null;
+        }
+
+        return 'data:audio/mpeg;base64,'.base64_encode($audio);
+    }
+
+    /**
+     * Twilio voices for the chosen language.
+     *
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function phoneVoices(): array
+    {
+        $language = (string) ($this->voice['language'] ?? 'en-US');
+        $options = [];
+
+        foreach (VoiceProfile::PHONE_VOICES as $id => $voice) {
+            if ($id === 'basic') {
+                $options[$id] = in_array($language, $voice['languages'], true)
+                    ? __('Basic voice (free)')
+                    : __('Basic voice (free, speaks US English for this language)');
+
+                continue;
+            }
+
+            if (in_array($language, $voice['languages'], true)) {
+                $options[$id] = $voice['label'].' · '.__('uses Twilio credit');
+            }
+        }
+
+        if (VoiceProfile::kokoroAvailable() && VoiceProfile::LANGUAGES[$language]['kokoro'] !== null) {
+            $options['kokoro'] = __('Self-hosted natural voice (free)');
+        }
+
+        return $options;
+    }
+
+    /**
+     * Kokoro voices for the chosen language, if Kokoro speaks it.
+     *
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function kokoroVoices(): array
+    {
+        $prefix = VoiceProfile::LANGUAGES[(string) ($this->voice['language'] ?? 'en-US')]['kokoro'] ?? null;
+
+        return collect(VoiceProfile::KOKORO_VOICES)
+            ->filter(fn (array $voice, string $id) => $prefix !== null && str_starts_with($id, $prefix))
+            ->map(fn (array $voice) => $voice['label'].' · '.__(VoiceProfile::GENDERS[$voice['gender']]))
+            ->all();
+    }
+
+    public function updatedVoiceLanguage(): void
+    {
+        // Keep the phone and Kokoro picks valid for the new language.
+        if (! array_key_exists((string) $this->voice['phone_voice'], $this->phoneVoices)) {
+            $this->voice['phone_voice'] = 'basic';
+        }
+
+        unset($this->phoneVoices, $this->kokoroVoices);
+        $kokoro = $this->kokoroVoices;
+
+        if ($kokoro !== [] && ! array_key_exists((string) $this->voice['kokoro_voice'], $kokoro)) {
+            $this->voice['kokoro_voice'] = (string) array_key_first($kokoro);
+        }
+
+        $this->voice['browser_voice'] = '';
     }
 
     public function saveSettings(): void
@@ -344,7 +496,7 @@ new #[Title('Calls')] class extends Component {
                             .then((r) => r.json())
                             .then((b) => {
                                 if (!b.data) throw new Error((b.error && b.error.message) || 'The call could not start.');
-                                return { token: token, greeting: b.data.greeting, max_seconds: b.data.max_seconds };
+                                return Object.assign({}, b.data, { token: token });
                             }),
                         onEnd: () => $wire.$refresh(),
                     }));
@@ -362,13 +514,172 @@ new #[Title('Calls')] class extends Component {
             <flux:heading>{{ __('Inbound calls') }}</flux:heading>
             <form wire:submit="saveSettings" class="space-y-4">
                 <flux:switch wire:model="widgetCalls" :label="__('Website visitors can call from the widget')" />
-                <flux:textarea wire:model="greeting" :label="__('Greeting')" rows="2" :placeholder="\App\Services\Calls\CallSettings::defaultGreeting($this->workspace)" :description="__('The first thing callers hear. Say that it is an automated assistant.')" />
+                <flux:textarea wire:model="greeting" :label="__('Greeting')" rows="2" :placeholder="\App\Services\Calls\CallSettings::defaultGreeting($this->workspace)" :description="__('The first thing callers hear. If it doesn\'t say it is a virtual assistant, that is added.')" />
                 <flux:input wire:model="handoff" :label="__('When the documents have no answer')" :placeholder="__('You can also email us at support@example.com.')" />
                 <flux:input wire:model="phoneNumber" :label="__('Phone number (Twilio)')" placeholder="+14155550123" :description="__('Calls to this Twilio number reach this workspace. In Twilio, set the number\'s voice webhook to :url (HTTP POST).', ['url' => \App\Services\Twilio\TwilioSignature::url('twilio/voice/inbound')])" />
                 @unless (\App\Services\Calls\CallSettings::twilioConfigured())
                     <flux:callout icon="information-circle" :text="__('The phone line needs a free Twilio trial account: the server admin sets TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER (see docs/calls.md). Browser calls work without it.')" />
                 @endunless
                 <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>
+            </form>
+        </section>
+
+        {{-- Voice and personality --}}
+        <section class="space-y-4" x-data="{
+                voices: [],
+                previewing: false,
+                list() {
+                    const lang = ($wire.voice.language || 'en-US').toLowerCase();
+                    const base = lang.split('-')[0];
+                    const all = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+                    this.voices = all.filter((v) => (v.lang || '').toLowerCase().replace('_', '-').split('-')[0] === base)
+                        .sort((a, b) => (/(natural|neural|online|google)/i.test(b.name) - /(natural|neural|online|google)/i.test(a.name)) || a.name.localeCompare(b.name));
+                },
+                init() {
+                    this.list();
+                    if (window.speechSynthesis) speechSynthesis.addEventListener('voiceschanged', () => this.list());
+                    this.$watch('$wire.voice.language', () => this.$nextTick(() => this.list()));
+                },
+                async previewBrowser() {
+                    if (!window.speechSynthesis) return;
+                    const text = await $wire.sampleLine();
+                    const v = $wire.voice;
+                    const lang = v.language;
+                    const all = speechSynthesis.getVoices();
+                    let voice = all.find((x) => x.name === v.browser_voice);
+                    if (!voice) voice = this.voices[0] || null;
+                    const nudge = { young: [0.04, 0.12], adult: [0, 0], mature: [-0.06, -0.12] }[v.age] || [0, 0];
+                    speechSynthesis.cancel();
+                    const u = new SpeechSynthesisUtterance(text);
+                    if (voice) u.voice = voice;
+                    u.lang = voice ? voice.lang : lang;
+                    u.rate = parseFloat(v.speed) + nudge[0];
+                    u.pitch = parseFloat(v.pitch) + nudge[1];
+                    speechSynthesis.speak(u);
+                },
+                async previewKokoro() {
+                    this.previewing = true;
+                    try {
+                        const url = await $wire.previewKokoro();
+                        if (url) await new Audio(url).play();
+                    } finally { this.previewing = false; }
+                },
+            }" data-test="voice-settings">
+            <div>
+                <flux:heading>{{ __('Voice and personality') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('How the assistant sounds on calls. It always says it is a virtual assistant at the start; after that it talks like a person would.') }}</flux:text>
+            </div>
+            <form wire:submit="saveVoice" class="space-y-5 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <flux:input wire:model="voice.assistant_name" :label="__('Assistant name')" :description="__('Used in the greeting: Hi, this is Ava...')" maxlength="40" />
+                    <flux:select wire:model="voice.personality" :label="__('Personality')">
+                        @foreach (\App\Services\Calls\VoiceProfile::PERSONALITIES as $key => $personality)
+                            <flux:select.option :value="$key">{{ __($personality['label']) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:select wire:model.live="voice.language" :label="__('Language and accent')">
+                        @foreach (\App\Services\Calls\VoiceProfile::LANGUAGES as $tag => $language)
+                            <flux:select.option :value="$tag">{{ __($language['label']) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <div class="flex items-end">
+                        <flux:switch wire:model="voice.auto_language" :label="__('Answer in the caller\'s language')" :description="__('Website calls detect the language spoken. Phone calls use the language above.')" />
+                    </div>
+                    <flux:select wire:model="voice.gender" :label="__('Voice')">
+                        @foreach (\App\Services\Calls\VoiceProfile::GENDERS as $key => $label)
+                            <flux:select.option :value="$key">{{ __($label) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:select wire:model="voice.age" :label="__('Age')">
+                        @foreach (\App\Services\Calls\VoiceProfile::AGES as $key => $label)
+                            <flux:select.option :value="$key">{{ __($label) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:select wire:model="voice.speed" :label="__('Speed')">
+                        @foreach (['0.85' => 'Slower', '0.95' => 'A little slower', '1.00' => 'Normal', '1.10' => 'A little faster', '1.20' => 'Faster'] as $value => $label)
+                            <flux:select.option :value="$value">{{ __($label) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:select wire:model="voice.pitch" :label="__('Pitch')">
+                        @foreach (['0.85' => 'Lower', '0.95' => 'A little lower', '1.00' => 'Normal', '1.08' => 'A little higher', '1.15' => 'Higher'] as $value => $label)
+                            <flux:select.option :value="$value">{{ __($label) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                </div>
+
+                <div class="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                    <flux:heading size="sm">{{ __('Website calls') }}</flux:heading>
+                    <flux:radio.group wire:model.live="voice.web_engine" :label="__('Voice engine')">
+                        <flux:radio value="browser" :label="__('Browser voice (free)')" :description="__('The most natural voice on each visitor\'s device. Edge and Chrome have very natural online voices.')" />
+                        <flux:radio value="kokoro" :label="__('Self-hosted natural voice (free)')" :description="\App\Services\Calls\VoiceProfile::kokoroAvailable() ? __('Kokoro, an open voice model running on your server. Same voice for every visitor.') : __('Needs the Kokoro service on the server (DOCCHAT_KOKORO_URL, see the docs).')" :disabled="! \App\Services\Calls\VoiceProfile::kokoroAvailable()" />
+                    </flux:radio.group>
+                    @if ($voice['web_engine'] === 'kokoro')
+                        <div class="flex flex-wrap items-end gap-3">
+                            <div class="min-w-56 flex-1">
+                                <flux:select wire:model="voice.kokoro_voice" :label="__('Self-hosted voice')">
+                                    @forelse ($this->kokoroVoices as $id => $label)
+                                        <flux:select.option :value="$id">{{ $label }}</flux:select.option>
+                                    @empty
+                                        <flux:select.option value="{{ $voice['kokoro_voice'] }}">{{ __('No voice for this language yet (browser voice is used)') }}</flux:select.option>
+                                    @endforelse
+                                </flux:select>
+                            </div>
+                            <flux:button type="button" icon="play" x-on:click="previewKokoro()" x-bind:disabled="previewing">{{ __('Preview') }}</flux:button>
+                        </div>
+                    @else
+                        <div class="flex flex-wrap items-end gap-3">
+                            <div class="min-w-56 flex-1">
+                                <flux:field>
+                                    <flux:label>{{ __('Preferred browser voice') }}</flux:label>
+                                    <flux:description>{{ __('Voices differ by device. Visitors without this one get the closest match.') }}</flux:description>
+                                    <select wire:model="voice.browser_voice" class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800" data-test="browser-voice">
+                                        <option value="">{{ __('Best match on each device') }}</option>
+                                        <template x-for="v in voices" :key="v.name">
+                                            <option :value="v.name" x-text="v.name + ' (' + v.lang + ')'" :selected="v.name === $wire.voice.browser_voice"></option>
+                                        </template>
+                                    </select>
+                                </flux:field>
+                            </div>
+                            <flux:button type="button" icon="play" x-on:click="previewBrowser()">{{ __('Preview') }}</flux:button>
+                        </div>
+                    @endif
+                    <flux:select wire:model="voice.background" :label="__('Background sound')" :description="__('A very quiet room sound, so silence feels less empty.')">
+                        @foreach (\App\Services\Calls\VoiceProfile::BACKGROUNDS as $key => $label)
+                            <flux:select.option :value="$key">{{ __($label) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                </div>
+
+                <div class="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                    <flux:heading size="sm">{{ __('Phone calls') }}</flux:heading>
+                    <flux:select wire:model="voice.phone_voice" :label="__('Phone voice')" :description="__('The basic voice is free. Amazon and Google voices sound more natural; on a Twilio trial they use the free credit, later they cost a little per call.')">
+                        @foreach ($this->phoneVoices as $id => $label)
+                            <flux:select.option :value="$id">{{ $label }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:select wire:model.live="voice.voicemail" :label="__('When an answering machine picks up (calls you make)')" :description="__('Voicemail detection uses Twilio credit.')">
+                        @foreach (\App\Services\Calls\VoiceProfile::VOICEMAIL as $key => $label)
+                            <flux:select.option :value="$key">{{ __($label) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    @if ($voice['voicemail'] === 'leave_message')
+                        <flux:textarea wire:model="voice.voicemail_message" rows="2" :label="__('Voicemail message')" :placeholder="__('Leave empty for a short message that says who called and why.')" />
+                    @endif
+                </div>
+
+                <div class="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                    <flux:heading size="sm">{{ __('Conversation') }}</flux:heading>
+                    <flux:select wire:model="voice.pace" :label="__('Pace')" :description="__('How long a pause ends the caller\'s turn, and how quickly the assistant answers.')">
+                        @foreach (\App\Services\Calls\VoiceProfile::PACES as $key => $pace)
+                            <flux:select.option :value="$key">{{ __($pace['label']) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:switch wire:model="voice.interruptions" :label="__('Callers can interrupt')" :description="__('Talking over the assistant stops it, like on a real call.')" />
+                    <flux:switch wire:model="voice.fillers" :label="__('Short fillers')" :description="__('Says \'Hmm, let me check.\' when an answer takes a moment.')" />
+                    <flux:switch wire:model="voice.hold_music" :label="__('Soft hold music')" :description="__('Plays quietly while a longer answer is being written.')" />
+                </div>
+
+                <flux:button type="submit" variant="primary" data-test="save-voice">{{ __('Save voice settings') }}</flux:button>
             </form>
         </section>
 

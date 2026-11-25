@@ -45,6 +45,10 @@ return new class extends Migration
             $table->unsignedSmallInteger('turns')->default(0);
             $table->unsignedSmallInteger('silences')->default(0);
             $table->string('end_reason', 40)->nullable();
+            // The language the caller speaks, when speech recognition detected it ("en", "ur").
+            $table->string('language', 8)->nullable();
+            // Outbound phone calls: human, machine_start, machine_end_beep... from Twilio.
+            $table->string('answered_by', 30)->nullable();
             $table->timestamp('expires_at')->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('ended_at')->nullable();

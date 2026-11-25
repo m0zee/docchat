@@ -33,6 +33,8 @@ use Illuminate\Support\Str;
  * @property int $turns
  * @property int $silences
  * @property string|null $end_reason
+ * @property string|null $language
+ * @property string|null $answered_by
  * @property Carbon|null $expires_at
  * @property Carbon|null $started_at
  * @property Carbon|null $ended_at
@@ -60,6 +62,8 @@ use Illuminate\Support\Str;
     'turns',
     'silences',
     'end_reason',
+    'language',
+    'answered_by',
     'expires_at',
     'started_at',
     'ended_at',

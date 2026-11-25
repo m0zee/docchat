@@ -48,15 +48,33 @@ class CallSettings
 
     public static function defaultGreeting(Workspace $workspace): string
     {
-        return 'Hi, you have reached '.$workspace->name.'. I am an automated assistant, and I answer from '
-            .$workspace->name.'\'s documents. How can I help you?';
+        $profile = VoiceProfile::for($workspace);
+
+        return Phrases::get(VoiceProfile::phraseLanguage($profile), 'greeting', [
+            'name' => $profile['assistant_name'],
+            'workspace' => $workspace->name,
+        ]);
     }
 
+    /**
+     * The owner's greeting, or the default. A greeting that doesn't say it is
+     * an assistant gets that added: callers must know they talk to an AI.
+     */
     public static function greeting(Workspace $workspace): string
     {
         $greeting = trim((string) self::for($workspace)['greeting']);
 
-        return $greeting !== '' ? $greeting : self::defaultGreeting($workspace);
+        if ($greeting === '') {
+            return self::defaultGreeting($workspace);
+        }
+
+        if (Phrases::discloses($greeting)) {
+            return $greeting;
+        }
+
+        $language = VoiceProfile::phraseLanguage(VoiceProfile::for($workspace));
+
+        return $greeting.' '.Phrases::get($language, 'disclosure');
     }
 
     /**
