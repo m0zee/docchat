@@ -33,6 +33,16 @@ class EvalFile
             throw new InvalidArgumentException('Eval file must be a non-empty JSON list of cases (or an object with a "cases" list).');
         }
 
+        return self::fromArray($data, 'Invalid eval file');
+    }
+
+    /**
+     * @param  list<mixed>  $data
+     * @return list<EvalCase>
+     */
+    public static function fromArray(array $data, string $errorPrefix = 'Invalid eval cases'): array
+    {
+
         $cases = [];
         $errors = [];
 
@@ -56,7 +66,7 @@ class EvalFile
         }
 
         if ($errors !== []) {
-            throw new InvalidArgumentException("Invalid eval file:\n".implode("\n", $errors));
+            throw new InvalidArgumentException($errorPrefix.":\n".implode("\n", $errors));
         }
 
         return $cases;
@@ -103,5 +113,19 @@ class EvalFile
         }
 
         return $problems;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function toArray(EvalCase $case): array
+    {
+        return array_filter([
+            'question' => $case->question,
+            'expected_keywords' => $case->expectedKeywords,
+            'expected_document' => $case->expectedDocument,
+            'expected_page' => $case->expectedPage,
+            'should_refuse' => $case->shouldRefuse ?: null,
+        ], fn (mixed $value): bool => $value !== null);
     }
 }

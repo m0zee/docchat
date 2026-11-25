@@ -69,6 +69,7 @@ Fill in:
 
 - `DOCCHAT_DOMAIN` and `APP_URL`. With no domain, use the free [sslip.io](https://sslip.io) name for your IP: for `203.0.113.10` that's `203.0.113.10.sslip.io`, and `APP_URL=https://203.0.113.10.sslip.io`. With the GitHub Student Pack you can also get a free domain for a year; point an A record at the IP and use that name instead.
 - `DB_PASSWORD`: a long random password, for example from `openssl rand -base64 24`.
+- `N8N_DB_PASSWORD` and `N8N_ENCRYPTION_KEY`: two more random values for n8n. Back up the encryption key: n8n encrypts its saved credentials with it.
 - `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/apikey) and `GROQ_API_KEY` from [Groq](https://console.groq.com/keys). Both are free. On the free Gemini tier, Google may use what you send to improve its products, so **upload test documents only**.
 
 Then generate the app key and paste it into `APP_KEY`:
@@ -117,6 +118,21 @@ By default emails (workspace invites, verification, password reset) are written 
 
 Then `docker compose -f docker-compose.prod.yml up -d` to restart with the new settings. Invite emails go through the queue, so the worker must be running.
 
+### n8n (automations)
+
+n8n starts with the rest of the stack, at `https://n8n.<your domain>`: with sslip.io that's `n8n.203.0.113.10.sslip.io`, which resolves to the same IP automatically. With your own domain, add an A record for `n8n` too, or set `N8N_DOMAIN` in `.env`. Caddy gets its certificate on the first visit. Open it, create the n8n owner account, and import the workflows from the `n8n/` folder ([n8n/README.md](n8n/README.md)).
+
+n8n's database is created automatically the first time Postgres starts. If you installed DocChat before n8n was added, the Postgres volume already exists, so create the database once by hand:
+
+```bash
+docker compose -f docker-compose.prod.yml exec db psql -U docchat -d docchat \
+  -c "CREATE USER n8n WITH PASSWORD 'the N8N_DB_PASSWORD value'" \
+  -c "CREATE DATABASE n8n OWNER n8n"
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Workflows on the same server call DocChat at `http://app:8080` (inside Docker, no TLS round trip), and DocChat's webhooks can point at `http://n8n:5678/webhook/...` for the same reason.
+
 ## 7. Day-to-day
 
 | Task | Command |
@@ -124,6 +140,8 @@ Then `docker compose -f docker-compose.prod.yml up -d` to restart with the new s
 | Update to the latest code | `git pull && docker compose -f docker-compose.prod.yml up -d --build` |
 | Logs (all services) | `docker compose -f docker-compose.prod.yml logs -f --tail=100` |
 | Per-answer usage log | `docker compose -f docker-compose.prod.yml exec app sh -c 'tail -f storage/logs/docchat-*.log'` |
+| n8n logs | `docker compose -f docker-compose.prod.yml logs -f n8n` |
+| Back up n8n | `docker compose -f docker-compose.prod.yml exec -T db pg_dump -U docchat n8n \| gzip > n8n-$(date +%F).sql.gz` |
 | Restart the worker | `docker compose -f docker-compose.prod.yml restart worker` |
 | Scheduled tasks (cache pruning) | run by the `scheduler` service; check with `docker compose -f docker-compose.prod.yml logs scheduler` |
 | Back up the database | `docker compose -f docker-compose.prod.yml exec -T db pg_dump -U docchat docchat \| gzip > docchat-$(date +%F).sql.gz` |

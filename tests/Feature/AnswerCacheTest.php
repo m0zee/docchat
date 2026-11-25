@@ -14,10 +14,13 @@ use App\Services\Documents\DocumentService;
 use App\Services\Embedding\CachingEmbeddingProvider;
 use App\Services\Rag\AnswerService;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Lottery;
 use Tests\Support\FakeChatProvider;
 use Tests\Support\FakeEmbeddingProvider;
 
 beforeEach(function () {
+    // Storing an entry prunes by lottery; keep it out of these counts.
+    Lottery::alwaysLose();
     config([
         'docchat.rag.similarity_threshold' => 0.5,
         'docchat.cache.answers' => true,
@@ -41,6 +44,10 @@ function ask(string $question, ?Conversation $conversation = null, ?callable $on
 
     return app(AnswerService::class)->answer($conversation, $question, $onDelta);
 }
+
+afterEach(function () {
+    Lottery::determineResultsNormally();
+});
 
 test('an exact repeat is answered from the cache without calling the model', function () {
     $first = ask('How long do refunds take?');

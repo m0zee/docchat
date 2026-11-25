@@ -15,3 +15,13 @@
 		-Server
 	}
 }
+
+# n8n editor and webhooks. N8N_DOMAIN defaults to n8n.<DOCCHAT_DOMAIN>
+# (sslip.io names work for subdomains too).
+{$N8N_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy n8n:5678 {
+		flush_interval -1
+	}
+	header -Server
+}

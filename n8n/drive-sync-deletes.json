@@ -1,0 +1,221 @@
+{
+  "id": "dcDriveSyncDel01",
+  "name": "DocChat: remove deleted Drive files",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Remove deleted Drive files\nEvery night: lists the files in the Drive folder, lists DocChat's documents with `source=google_drive`, and deletes the documents whose file is gone.\n\nPick the same folder as in the ingest workflow. Setup: see `n8n/README.md`.",
+        "width": 460,
+        "height": 300
+      },
+      "id": "5c1883a7-8985-5247-8e2e-9d4cc80d2918",
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "0ff5f58e-b35e-5044-aa21-d96ec7dcf9d8",
+      "name": "Every night",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "trashed = false",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "",
+            "mode": "list"
+          },
+          "whatToSearch": "files"
+        },
+        "options": {
+          "fields": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "id": "4e913e03-056c-579a-b6f8-848dd87999dd",
+      "name": "Files in the folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/documents",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "source",
+              "value": "google_drive"
+            },
+            {
+              "name": "per_page",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "cursor",
+                    "value": "={{ $response.body.meta.next_cursor }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.meta.next_cursor }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50
+            }
+          }
+        }
+      },
+      "id": "4cb81a32-e04d-5084-9bfe-a1ca2fb76fb3",
+      "name": "DocChat Drive documents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        560,
+        0
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Documents that came from Drive but whose file is no longer in the folder.\n// Stops instead of deleting when the folder looks empty or too much would go.\nconst MAX_DELETES = 25;\nconst driveIds = new Set($('Files in the folder').all().map((item) => item.json.id).filter(Boolean));\nconst documents = $input.all().flatMap((item) => item.json.data || []);\nconst missing = documents.filter((doc) => doc.external_id && !driveIds.has(doc.external_id));\n\nif (driveIds.size === 0) {\n  throw new Error('The Drive folder returned no files. Nothing was deleted.');\n}\nif (missing.length > MAX_DELETES) {\n  throw new Error(`${missing.length} documents would be deleted, more than ${MAX_DELETES}. Check the folder, or raise MAX_DELETES.`);\n}\n\nreturn missing.map((doc) => ({ json: { id: doc.id, title: doc.title, external_id: doc.external_id } }));"
+      },
+      "id": "f47ef2b6-5814-57d5-b912-1b65647cb869",
+      "name": "Find removed files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "DELETE",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/documents/{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "76e0881e-f679-51c4-803f-b1d28ed7bb30",
+      "name": "Delete from DocChat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Every night": {
+      "main": [
+        [
+          {
+            "node": "Files in the folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Files in the folder": {
+      "main": [
+        [
+          {
+            "node": "DocChat Drive documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DocChat Drive documents": {
+      "main": [
+        [
+          {
+            "node": "Find removed files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find removed files": {
+      "main": [
+        [
+          {
+            "node": "Delete from DocChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Karachi",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": []
+}

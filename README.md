@@ -28,6 +28,8 @@ DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask que
 - **Signed webhooks** for `document.ready` and `document.failed`, retried with backoff.
 - **Answer cache.** Repeated first questions are answered from the cache by exact or near-identical match (pgvector, 0.95 or more), and query embeddings are cached too. Everything is dropped when documents change. Hits and tokens saved show on the usage page.
 - **Usage page** with monthly totals per channel: questions, tokens, cache hits and latency.
+- **n8n automations** ([n8n/](n8n/README.md)): files dropped in a Google Drive folder are ingested automatically (Docs, Sheets and Slides as PDF), deleted Drive files are removed every night, and a nightly eval emails its scores. n8n runs in the same Docker stack with its own database.
+- **Eval API:** `POST /api/v1/evals/run` runs an eval set in the background, one case per queued job, and posts signed results to a callback URL.
 
 ## How it works
 
@@ -187,7 +189,7 @@ The tests need no API keys: every Gemini, Groq and OpenRouter call is faked, and
 
 ## Deploy
 
-[`deploy.md`](deploy.md) walks through a free Oracle Cloud Always Free Arm VM with `docker-compose.prod.yml`: app, queue worker, Postgres with pgvector, and Caddy with automatic HTTPS.
+[`deploy.md`](deploy.md) walks through a free Oracle Cloud Always Free Arm VM with `docker-compose.prod.yml`: app, queue worker, scheduler, n8n, Postgres with pgvector, and Caddy with automatic HTTPS.
 
 ## Stack
 
@@ -195,8 +197,6 @@ Laravel 13, PHP 8.4, Livewire 4 with Flux, Tailwind 4, PostgreSQL 16 with pgvect
 
 ## Roadmap
 
-- Ingest from Google Drive through an n8n webhook.
-- Multi-tenant workspaces with shared documents.
 - Hybrid search: Postgres full-text plus vectors.
 - Reranking the retrieved chunks before prompting.
 - OCR for scanned PDFs, which currently fail with "No extractable text".
