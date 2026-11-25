@@ -132,6 +132,16 @@ the WAV per clone (`voice-cache/clone-<id>`). A clone is used only when the call
 clone server's language; other calls use the normal voice. If the server is down, calls fall
 back to the normal voice too.
 
+## Scheduled calls and agendas
+
+Owners schedule outbound calls under **Conversations > Schedule calls**: a saved contact or a new one (phone or email, with how they agreed), a phone call or an invitation link, now or at a date and time in the person's time zone, and an optional agenda of up to 8 points.
+
+- The time is stored in UTC with the time zone it was set in. `php artisan docchat:start-scheduled-calls` runs every minute from `routes/console.php` (the `scheduler` service in `docker-compose.prod.yml` runs `schedule:work`; locally run `php artisan schedule:work`).
+- Scheduled phone calls must fall inside `DOCCHAT_CALLING_HOURS`. At the time they are claimed (so two scheduler runs can't both dial), queued, and `PlaceTwilioCallJob` checks consent, opt-out and calling hours again. A call more than `DOCCHAT_CALL_SCHEDULE_GRACE_MINUTES` (30) late, because the scheduler was down, is canceled as `missed_schedule` instead of ringing hours late.
+- Scheduled invitation links are made and emailed at once with the time. The link opens 5 minutes before (the API answers `425 call_too_early` until then) and works for `DOCCHAT_CALL_LINK_DAYS` after the time. An encrypted copy of the token is kept only to send the "it's time" email, then deleted.
+- Calls can be up to `DOCCHAT_CALL_SCHEDULE_MAX_DAYS` (60) days ahead. Owners can move or cancel any call that hasn't started.
+- With an agenda, the opening ends with the first point. After each reply the agent answers from the documents if they cover what was said, otherwise says a short thanks (no model call), then asks the next point; after the last it asks if there is anything else. A short "no thanks" answers an agenda question instead of ending the call. The transcript keeps exactly what was said, so the summary on the Conversations page can report each answer.
+
 ## Rules the agent follows
 
 - It always says it is a virtual assistant: the greeting does (it is added to a custom

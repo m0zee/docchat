@@ -36,6 +36,11 @@ class CallSessionController extends Controller
     public function answer(Request $request): JsonResponse
     {
         $call = AuthenticateCallToken::call($request);
+
+        if ($call->isTooEarly()) {
+            return ApiError::response(425, 'call_too_early', 'This call is scheduled for later. The link opens '.Call::EARLY_MINUTES.' minutes before.');
+        }
+
         $greeting = $this->agent->begin($call);
         CallAgent::remember($call, $greeting);
 

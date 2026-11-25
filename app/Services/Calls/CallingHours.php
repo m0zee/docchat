@@ -2,7 +2,7 @@
 
 namespace App\Services\Calls;
 
-use Illuminate\Support\Carbon;
+use Carbon\CarbonInterface;
 
 /**
  * Outbound phone calls only start inside DOCCHAT_CALLING_HOURS ("09:00-20:00")
@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
  */
 final class CallingHours
 {
-    public static function allows(?Carbon $at = null): bool
+    public static function allows(?CarbonInterface $at = null): bool
     {
         $window = (string) config('docchat.calls.calling_hours', '');
 

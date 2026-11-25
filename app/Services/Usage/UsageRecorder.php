@@ -38,6 +38,20 @@ class UsageRecorder
         ]);
     }
 
+    public function summary(Conversation $conversation, int $promptTokens, int $completionTokens, int $latencyMs, ?string $source = null): void
+    {
+        $this->write([
+            'workspace_id' => $conversation->workspace_id,
+            'api_key_id' => null,
+            'channel' => $conversation->channel,
+            'type' => UsageType::Summary,
+            'prompt_tokens' => $promptTokens,
+            'completion_tokens' => $completionTokens,
+            'latency_ms' => $latencyMs,
+            'ai_source' => $source,
+        ]);
+    }
+
     public function ingest(Document $document, int $embeddingTokens, int $latencyMs, ?AiSource $source = null): void
     {
         $this->write([

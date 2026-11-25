@@ -187,6 +187,10 @@ return [
         'calling_hours' => env('DOCCHAT_CALLING_HOURS', '09:00-20:00'),
         'timezone' => env('DOCCHAT_CALLING_TIMEZONE', env('APP_TIMEZONE', 'UTC')),
         'link_valid_days' => (int) env('DOCCHAT_CALL_LINK_DAYS', 7),
+        // Scheduled calls: how far ahead they can be set, and how late a
+        // scheduled phone call may still ring (if the scheduler was down).
+        'schedule_max_days' => (int) env('DOCCHAT_CALL_SCHEDULE_MAX_DAYS', 60),
+        'schedule_grace_minutes' => (int) env('DOCCHAT_CALL_SCHEDULE_GRACE_MINUTES', 30),
         'rate_limit_per_minute' => (int) env('DOCCHAT_CALL_RATE_LIMIT_PER_MINUTE', 30),
         // Phone answers run in a job; the line plays a filler and a hold
         // sound while it waits, for at most this many seconds.

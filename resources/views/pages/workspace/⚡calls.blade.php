@@ -4,8 +4,6 @@ use App\Enums\CallDirection;
 use App\Enums\CallStatus;
 use App\Enums\CallTransport;
 use App\Enums\MessageRole;
-use App\Jobs\PlaceTwilioCallJob;
-use App\Mail\CallLinkMail;
 use App\Mail\VoiceConsentMail;
 use App\Models\Call;
 use App\Models\CallContact;
@@ -14,6 +12,8 @@ use App\Models\VoiceClone;
 use App\Enums\VoiceCloneStatus;
 use App\Models\Workspace;
 use App\Services\Calls\CallingHours;
+use App\Services\Calls\OutboundCalls;
+use App\Exceptions\CallPlanException;
 use App\Services\Calls\CallSettings;
 use App\Services\Calls\Phrases;
 use App\Services\Calls\VoiceProfile;
@@ -521,7 +521,7 @@ new #[Title('Calls')] class extends Component {
         unset($this->contacts);
     }
 
-    public function startCall(): void
+    public function startCall(OutboundCalls $calls): void
     {
         Gate::authorize('manage', $this->workspace);
 
@@ -534,74 +534,47 @@ new #[Title('Calls')] class extends Component {
 
         $contact = CallContact::query()->inWorkspace($this->workspace)->find($this->callContactId);
 
-        if ($contact === null || ! $contact->mayBeCalled()) {
+        if ($contact === null) {
             $this->addError('callContactId', __('Only contacts who agreed to be called, and did not opt out, can be called.'));
 
             return;
         }
 
-        $phone = $this->callTransport === 'phone';
+        try {
+            $result = $calls->create(
+                $this->workspace,
+                $contact,
+                CallTransport::from($this->callTransport),
+                $this->callPurpose,
+                Auth::user(),
+                $this->callOpening,
+                email: $this->callEmail,
+            );
+        } catch (CallPlanException $exception) {
+            $this->addError($exception->field === 'contact' ? 'callContactId' : 'callTransport', $exception->getMessage());
 
-        if ($phone) {
-            if (! CallSettings::twilioConfigured() || ! filled(config('docchat.calls.twilio.from_number'))) {
-                $this->addError('callTransport', __('The phone line is not set up on this server (TWILIO_* in .env).'));
-
-                return;
-            }
-
-            if ($contact->phone === null) {
-                $this->addError('callContactId', __('This contact has no phone number.'));
-
-                return;
-            }
-
-            if (! CallingHours::allows()) {
-                $this->addError('callTransport', __('Phone calls only start inside the calling hours: :hours.', ['hours' => CallingHours::describe()]));
-
-                return;
-            }
+            return;
         }
 
-        $call = Call::query()->create([
-            'workspace_id' => $this->workspace->id,
-            'contact_id' => $contact->id,
-            'created_by_user_id' => Auth::id(),
-            'direction' => CallDirection::Outbound,
-            'transport' => $phone ? CallTransport::Phone : CallTransport::Web,
-            'status' => $phone ? CallStatus::Queued : CallStatus::Waiting,
-            'purpose' => trim($this->callPurpose),
-            'opening' => trim($this->callOpening) ?: null,
-            'to_number' => $phone ? $contact->phone : null,
-            'expires_at' => $phone ? null : now()->addDays(max(1, (int) config('docchat.calls.link_valid_days'))),
-        ]);
-
-        if ($phone) {
-            PlaceTwilioCallJob::dispatch($call->id);
+        if ($this->callTransport === 'phone') {
             Flux::toast(variant: 'success', text: __('Calling :name now.', ['name' => $contact->name]));
         } else {
-            // APP_URL, not the address this page was opened on: the link is sent to someone else.
-            $this->createdLink = rtrim((string) config('app.url'), '/').'/call/'.$call->issueToken();
-
-            if ($this->callEmail && $contact->email !== null) {
-                Mail::to($contact->email)->send(new CallLinkMail($call->load('workspace', 'contact'), $this->createdLink));
-                Flux::toast(variant: 'success', text: __('Call link emailed to :email.', ['email' => $contact->email]));
-            } else {
-                Flux::toast(variant: 'success', text: __('Call link created.'));
-            }
+            $this->createdLink = $result['link'];
+            Flux::toast(variant: 'success', text: $result['emailed'] ? __('Call link emailed to :email.', ['email' => $contact->email]) : __('Call link created.'));
         }
 
         $this->reset('callPurpose', 'callOpening');
         unset($this->calls);
     }
 
-    public function cancelCall(int $id): void
+    public function cancelCall(int $id, OutboundCalls $calls): void
     {
         Gate::authorize('manage', $this->workspace);
 
         $call = Call::query()->inWorkspace($this->workspace)->find($id);
 
-        if ($call !== null && in_array($call->status, [CallStatus::Waiting, CallStatus::Queued], true)) {
-            $call->finish(CallStatus::Canceled, 'canceled_by_owner');
+        if ($call !== null) {
+            $calls->cancel($call);
         }
 
         unset($this->calls);
@@ -1008,6 +981,7 @@ new #[Title('Calls')] class extends Component {
         {{-- Outbound --}}
         <section class="space-y-4">
             <flux:heading>{{ __('Call someone') }}</flux:heading>
+            <flux:text>{{ __('To call at a set time, with an agenda the assistant follows, use') }} <flux:link :href="route('conversations.index', ['tab' => 'calls'])" wire:navigate>{{ __('Conversations > Schedule calls') }}</flux:link>.</flux:text>
             <form wire:submit="startCall" class="space-y-3">
                 <flux:select wire:model="callContactId" :label="__('Contact')">
                     <flux:select.option value="">{{ __('Choose a contact who agreed') }}</flux:select.option>
@@ -1048,7 +1022,7 @@ new #[Title('Calls')] class extends Component {
                         <flux:badge size="sm" color="zinc">{{ $call->transport->label() }}</flux:badge>
                         <div class="min-w-0 flex-1 truncate">{{ $call->counterpart() }}@if ($call->purpose) <span class="text-zinc-500">· {{ $call->purpose }}</span>@endif</div>
                         <div class="text-xs text-zinc-500">{{ $call->status->label() }}@if ($call->duration_seconds !== null) · {{ gmdate($call->duration_seconds >= 3600 ? 'H:i:s' : 'i:s', $call->duration_seconds) }}@endif · {{ $call->created_at?->diffForHumans() }}</div>
-                        @if (in_array($call->status, [\App\Enums\CallStatus::Waiting, \App\Enums\CallStatus::Queued], true))
+                        @if ($call->status->isPending())
                             <flux:button size="sm" variant="ghost" wire:click="cancelCall({{ $call->id }})">{{ __('Cancel') }}</flux:button>
                         @endif
                         @if ($call->conversation_id)

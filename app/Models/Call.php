@@ -6,6 +6,7 @@ use App\Enums\CallDirection;
 use App\Enums\CallStatus;
 use App\Enums\CallTransport;
 use App\Models\Concerns\BelongsToWorkspace;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +27,9 @@ use Illuminate\Support\Str;
  * @property CallStatus $status
  * @property string|null $purpose
  * @property string|null $opening
+ * @property list<string>|null $agenda points the agent covers, in order
+ * @property int $agenda_step how many agenda points it has asked
+ * @property string|null $link_token a scheduled call link, until its reminder is sent
  * @property string|null $token_hash
  * @property string|null $provider_sid
  * @property string|null $from_number
@@ -36,6 +40,8 @@ use Illuminate\Support\Str;
  * @property string|null $language
  * @property string|null $answered_by
  * @property Carbon|null $expires_at
+ * @property Carbon|null $scheduled_at
+ * @property string|null $timezone the time zone the call was scheduled in
  * @property Carbon|null $started_at
  * @property Carbon|null $ended_at
  * @property int|null $duration_seconds
@@ -55,7 +61,10 @@ use Illuminate\Support\Str;
     'status',
     'purpose',
     'opening',
+    'agenda',
+    'agenda_step',
     'token_hash',
+    'link_token',
     'provider_sid',
     'from_number',
     'to_number',
@@ -65,11 +74,13 @@ use Illuminate\Support\Str;
     'language',
     'answered_by',
     'expires_at',
+    'scheduled_at',
+    'timezone',
     'started_at',
     'ended_at',
     'duration_seconds',
 ])]
-#[Hidden(['token_hash'])]
+#[Hidden(['token_hash', 'link_token'])]
 class Call extends Model
 {
     use BelongsToWorkspace;
@@ -85,6 +96,10 @@ class Call extends Model
             'direction' => CallDirection::class,
             'transport' => CallTransport::class,
             'status' => CallStatus::class,
+            'agenda' => 'array',
+            'agenda_step' => 'integer',
+            'link_token' => 'encrypted',
+            'scheduled_at' => 'datetime',
             'turns' => 'integer',
             'silences' => 'integer',
             'expires_at' => 'datetime',
@@ -144,6 +159,39 @@ class Call extends Model
         }
 
         return self::query()->withoutGlobalScopes()->where('token_hash', self::hash($plain))->first();
+    }
+
+    /**
+     * The agenda's points, without empty ones.
+     *
+     * @return list<string>
+     */
+    public function agendaPoints(): array
+    {
+        return array_values(array_filter(
+            array_map(fn ($point): string => trim((string) $point), (array) $this->agenda),
+            fn (string $point): bool => $point !== '',
+        ));
+    }
+
+    /**
+     * A call link may be opened from a few minutes before its scheduled time.
+     */
+    public function isTooEarly(): bool
+    {
+        return $this->scheduled_at !== null
+            && $this->transport === CallTransport::Web
+            && $this->scheduled_at->gt(now()->addMinutes(self::EARLY_MINUTES));
+    }
+
+    public const EARLY_MINUTES = 5;
+
+    /**
+     * The scheduled time in the time zone it was set in.
+     */
+    public function scheduledLocal(): ?CarbonInterface
+    {
+        return $this->scheduled_at?->copy()->setTimezone($this->timezone ?: (string) config('app.timezone', 'UTC'));
     }
 
     public function isExpired(): bool

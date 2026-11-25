@@ -17,6 +17,8 @@
                 __('PDF, TXT and Markdown up to :mb MB each', ['mb' => $limits['upload_mb']]),
                 __('Web chat, widget, Telegram, WhatsApp and Discord'),
                 __('Voice calls on your website, in seven languages'),
+                __('Every conversation in one inbox, with AI summaries'),
+                __('Scheduled calls that follow your agenda'),
                 __('API, webhooks and answer cache'),
                 __(':n questions a minute per person', ['n' => $limits['questions']]),
                 __('Answers on shared free Groq and Gemini quota'),
@@ -117,6 +119,8 @@
                     <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
                         @foreach ([
                             [__('Website calls with the browser\'s voice'), __('Free')],
+                            [__('Scheduled call links with an agenda'), __('Free')],
+                            [__('Conversation summaries'), __('Free: one AI call each, saved until new messages arrive')],
                             [__('Self-hosted natural voice (Kokoro)'), __('Free, on your own server')],
                             [__('Voice clones, with the speaker\'s recorded consent (Pocket TTS)'), __('Free, on your own server')],
                             [__('Speech recognition (Groq Whisper)'), __('Free tier, shared: 300 recordings a day per workspace')],

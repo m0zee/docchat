@@ -21,6 +21,7 @@ class Docs
         'Use DocChat' => [
             'documents' => 'Documents',
             'chat' => 'Chat',
+            'conversations' => 'Conversations and summaries',
             'workspaces' => 'Workspaces and members',
         ],
         'Channels' => [
