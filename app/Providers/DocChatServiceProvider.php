@@ -6,6 +6,7 @@ use App\Contracts\ChatProvider;
 use App\Contracts\EmbeddingProvider;
 use App\Contracts\SpeechToText;
 use App\Contracts\TextToSpeech;
+use App\Services\Chat\GeminiChatProvider;
 use App\Services\Chat\GroqChatProvider;
 use App\Services\Chat\OpenRouterChatProvider;
 use App\Services\Embedding\CachingEmbeddingProvider;
@@ -72,6 +73,7 @@ class DocChatServiceProvider extends ServiceProvider
 
             return match ($driver) {
                 'groq' => $this->app->make(GroqChatProvider::class),
+                'gemini' => $this->app->make(GeminiChatProvider::class),
                 'openrouter' => $this->app->make(OpenRouterChatProvider::class),
                 default => throw new InvalidArgumentException(
                     'Unsupported chat driver ['.$driver.'].',

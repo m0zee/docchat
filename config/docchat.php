@@ -35,7 +35,40 @@ return [
                 'api_key' => env('GROQ_API_KEY'),
                 'reasoning_effort' => env('DOCCHAT_GROQ_REASONING_EFFORT', 'low'),
             ],
+            // Gemini chat, OpenAI-compatible endpoint. Mainly for workspaces
+            // that bring their own Gemini key; the app's GEMINI_API_KEY works too.
+            'gemini' => [
+                'model' => env('DOCCHAT_GEMINI_CHAT_MODEL'),
+                'base_url' => env('DOCCHAT_GEMINI_CHAT_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai'),
+                'api_key' => env('GEMINI_API_KEY'),
+                'reasoning_effort' => env('DOCCHAT_GEMINI_REASONING_EFFORT', 'low'),
+            ],
         ],
+    ],
+
+    // Bring your own key: workspace owners can paste their own free Groq or
+    // Gemini key in Workspace > AI keys. Keys are encrypted with APP_KEY.
+    'own_keys' => [
+        'enabled' => (bool) env('DOCCHAT_OWN_KEYS', true),
+        // Base URLs used to check a key before it is saved.
+        'check_urls' => [
+            'groq' => env('DOCCHAT_GROQ_BASE_URL', 'https://api.groq.com/openai/v1').'/models',
+            'gemini' => env('DOCCHAT_EMBEDDING_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta').'/models',
+        ],
+    ],
+
+    // In-browser AI: the server retrieves, the asker's browser writes the
+    // answer with Chrome's built-in model (Gemini Nano) or WebLLM.
+    'device' => [
+        'enabled' => (bool) env('DOCCHAT_DEVICE_AI', true),
+        // Small on-device models have small context windows.
+        'top_k' => (int) env('DOCCHAT_DEVICE_TOP_K', 3),
+        'token_ttl_seconds' => (int) env('DOCCHAT_DEVICE_TOKEN_TTL', 600),
+        'max_answer_chars' => (int) env('DOCCHAT_DEVICE_MAX_ANSWER_CHARS', 6000),
+        // WebLLM fallback for the signed-in chat page, loaded from a CDN only
+        // when someone turns it on. Pinned; see https://github.com/mlc-ai/web-llm
+        'webllm_url' => env('DOCCHAT_WEBLLM_URL', 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.87/+esm'),
+        'webllm_model' => env('DOCCHAT_WEBLLM_MODEL', 'Llama-3.2-1B-Instruct-q4f16_1-MLC'),
     ],
 
     'api' => [
@@ -47,6 +80,7 @@ return [
     'workspace_nav' => [
         'workspace.members' => 'Members',
         'workspace.api-keys' => 'API keys',
+        'workspace.ai-keys' => 'AI keys',
         'workspace.widget' => 'Widget',
         'workspace.channels' => 'Chat apps',
         'workspace.calls' => 'Calls',

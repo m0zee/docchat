@@ -100,6 +100,14 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<WorkspaceAiKey, $this>
+     */
+    public function aiKeys(): HasMany
+    {
+        return $this->hasMany(WorkspaceAiKey::class);
+    }
+
+    /**
      * @return HasMany<Conversation, $this>
      */
     public function conversations(): HasMany

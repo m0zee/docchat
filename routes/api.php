@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CallController;
 use App\Http\Controllers\Api\CallSessionController;
 use App\Http\Controllers\Api\ChannelLinkController;
 use App\Http\Controllers\Api\ConversationController;
+use App\Http\Controllers\Api\DeviceAskController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\EvalController;
 use App\Http\Controllers\Api\VoiceController;
@@ -34,6 +35,8 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('ask', AskController::class)->name('ask');
         Route::match(['get', 'post'], 'ask/stream', AskStreamController::class)->name('ask.stream');
         Route::get('widget', WidgetController::class)->name('widget');
+        Route::post('ask/device', [DeviceAskController::class, 'prepare'])->name('ask.device');
+        Route::post('ask/device/complete', [DeviceAskController::class, 'complete'])->name('ask.device.complete');
         Route::post('calls', [CallController::class, 'store'])->name('calls.store');
     });
 

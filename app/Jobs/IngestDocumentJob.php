@@ -3,10 +3,12 @@
 namespace App\Jobs;
 
 use App\Contracts\EmbeddingProvider;
+use App\Enums\AiSource;
 use App\Enums\DocumentStatus;
 use App\Exceptions\DocumentParsingException;
 use App\Exceptions\EmbeddingException;
 use App\Models\Document;
+use App\Services\Ai\AiProviders;
 use App\Services\Cache\AnswerCache;
 use App\Services\Ingestion\Chunker;
 use App\Services\Ingestion\DocumentParser;
@@ -54,10 +56,16 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
         Chunker $chunker,
         EmbeddingProvider $embeddings,
         ?UsageRecorder $usage = null,
+        ?AiProviders $providers = null,
     ): void {
         $usage ??= app(UsageRecorder::class);
+        $providers ??= app(AiProviders::class);
         $started = hrtime(true);
         $document = $this->document->refresh();
+
+        // A workspace's own Gemini key embeds its documents when it has one.
+        $ownKey = $providers->embeddingKey($document->workspace);
+        $embeddings = $providers->embeddings($document->workspace, $embeddings);
 
         $document->update([
             'status' => DocumentStatus::Processing,
@@ -128,12 +136,19 @@ class IngestDocumentJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
             AnswerCache::invalidate($document->workspace_id);
             app(WebhookDispatcher::class)->document($document->refresh(), 'document.ready');
 
+            $providers->markUsed($ownKey);
+
             $usage->ingest(
                 $document,
                 array_sum(array_map(fn ($chunk): int => $chunk->tokenEstimate, $chunks)),
                 (int) round((hrtime(true) - $started) / 1_000_000),
+                $ownKey === null ? AiSource::Platform : AiSource::Workspace,
             );
         } catch (Throwable $exception) {
+            if ($exception instanceof EmbeddingException && $exception->ownKeyRejected) {
+                $providers->markRejected($ownKey, $exception->getMessage());
+            }
+
             if (self::isPermanent($exception)) {
                 // Retrying can't fix a scanned PDF or a rejected API key:
                 // record it now and stop the queue from trying again.

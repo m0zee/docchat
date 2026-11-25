@@ -18,7 +18,10 @@ class WidgetController extends Controller
      * visitors can call the assistant by voice. Works with
      * the widget's public key.
      *
-     * @response array{data: array{title: string, welcome: string, color: string, position: 'left'|'right', handoff: array{email: string|null, text: string}, calls: bool}}
+     * device_ai is true when the widget may let the visitor's browser write
+     * answers with its built-in AI (see POST /ask/device).
+     *
+     * @response array{data: array{title: string, welcome: string, color: string, position: 'left'|'right', handoff: array{email: string|null, text: string}, calls: bool, device_ai: bool}}
      */
     public function __invoke(CurrentWorkspace $current): JsonResponse
     {
@@ -32,6 +35,7 @@ class WidgetController extends Controller
             'position' => $settings['position'],
             'handoff' => ['email' => $settings['handoff_email'], 'text' => $settings['handoff_text']],
             'calls' => CallSettings::for($workspace)['widget_calls'],
+            'device_ai' => DeviceAskController::allowed($workspace),
         ]], 200, ['Cache-Control' => 'public, max-age=60']);
     }
 }

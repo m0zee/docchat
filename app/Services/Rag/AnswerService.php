@@ -2,20 +2,24 @@
 
 namespace App\Services\Rag;
 
-use App\Contracts\ChatProvider;
-use App\Contracts\EmbeddingProvider;
+use App\Enums\AiSource;
 use App\Enums\ConversationChannel;
 use App\Enums\MessageRole;
 use App\Evals\EvalRunner;
 use App\Exceptions\ChatProviderException;
 use App\Exceptions\ChatRateLimitedException;
 use App\Exceptions\EmbeddingException;
+use App\Exceptions\InvalidProviderKeyException;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\Workspace;
+use App\Services\Ai\AiProviders;
 use App\Services\Cache\AnswerCache;
 use App\Services\Cache\CachedAnswer;
 use App\Services\Chat\ChatResult;
 use App\Services\Usage\UsageRecorder;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -37,9 +41,8 @@ class AnswerService
         private Retriever $retriever,
         private PromptBuilder $prompts,
         private CitationExtractor $citations,
-        private ChatProvider $chat,
         private UsageRecorder $usage,
-        private EmbeddingProvider $embeddings,
+        private AiProviders $providers,
         private AnswerCache $cache,
     ) {}
 
@@ -47,6 +50,169 @@ class AnswerService
      * @param  (callable(string): void)|null  $onDelta  called with each streamed text piece
      */
     public function answer(Conversation $conversation, string $question, ?callable $onDelta = null): Message
+    {
+        $prepared = $this->retrieve($conversation, $question, $onDelta);
+
+        if ($prepared instanceof Message) {
+            return $prepared;
+        }
+
+        ['question' => $question, 'history' => $history, 'started' => $started, 'workspace' => $workspace,
+            'documentIds' => $documentIds, 'cacheable' => $cacheable, 'vector' => $vector] = $prepared;
+
+        $messages = $this->prompts->build($question, $this->lastRetrieved, $history->all());
+        $content = '';
+        $result = null;
+        $error = null;
+        $chat = $this->providers->chat($workspace);
+
+        try {
+            $stream = $chat->provider->stream($messages);
+
+            foreach ($stream as $delta) {
+                $content .= $delta;
+
+                if ($onDelta !== null) {
+                    $onDelta($delta);
+                }
+            }
+
+            $result = $stream->getReturn();
+            $this->providers->markUsed($chat->key);
+        } catch (InvalidProviderKeyException $exception) {
+            $this->providers->markRejected($chat->key, $exception->getMessage());
+            $error = $exception->getMessage();
+        } catch (ChatRateLimitedException) {
+            $error = self::BUSY;
+        } catch (ChatProviderException $exception) {
+            report($exception);
+            $error = 'The answer could not be completed. '.$exception->getMessage();
+        } catch (Throwable $exception) {
+            report($exception);
+            $error = 'The answer could not be completed. Please try again.';
+        }
+
+        $citations = $this->citations->extract($content, $this->lastRetrieved);
+
+        $message = $this->saveAssistant(
+            $conversation,
+            $result instanceof ChatResult ? $result->content : $content,
+            $started,
+            citations: $citations,
+            result: $result,
+            error: $error,
+            source: $chat->source,
+        );
+
+        if ($cacheable && $error === null && $result instanceof ChatResult
+            && $citations !== [] && trim($message->content) !== '' && ! EvalRunner::isRefusal($message->content)) {
+            $this->cache->store(
+                $workspace,
+                $question,
+                $vector,
+                $documentIds,
+                $message->content,
+                $citations,
+                (int) $result->promptTokens,
+                (int) $result->completionTokens,
+            );
+        }
+
+        $this->log($conversation, $message, $result?->model, UsageRecorder::estimateTokens($question));
+
+        return $message;
+    }
+
+    /**
+     * In-browser AI, step 1: retrieve on the server, but leave writing the
+     * answer to the asker's device (Chrome's built-in model or WebLLM).
+     * Returns the saved reply when no model is needed (cache hit, nothing
+     * found, search failed), otherwise the prompt for the device.
+     */
+    public function prepareForDevice(Conversation $conversation, string $question): Message|DevicePrompt
+    {
+        // Small on-device models have small context windows: fewer chunks.
+        $topK = max(1, (int) config('docchat.device.top_k'));
+        $prepared = $this->retrieve($conversation, $question, null, $topK);
+
+        if ($prepared instanceof Message) {
+            return $prepared;
+        }
+
+        $token = Str::random(40);
+        $ttl = max(60, (int) config('docchat.device.token_ttl_seconds'));
+
+        Cache::put(self::deviceKey($token), [
+            'conversation_id' => $conversation->id,
+            'question_tokens' => UsageRecorder::estimateTokens($prepared['question']),
+            'started_at' => microtime(true),
+            'chunks' => array_map(fn (RetrievedChunk $chunk): array => (array) $chunk, $this->lastRetrieved),
+        ], $ttl);
+
+        return new DevicePrompt(
+            token: $token,
+            messages: $this->prompts->build($prepared['question'], $this->lastRetrieved, $prepared['history']->all()),
+            maxOutputTokens: (int) config('docchat.chat.max_output_tokens'),
+            expiresIn: $ttl,
+        );
+    }
+
+    /**
+     * In-browser AI, step 2: save the answer the device wrote. The token is
+     * single use and bound to the conversation. The text came from the
+     * browser, so it is only ever shown in this conversation: it is never
+     * put in the answer cache, where other people could be served it.
+     */
+    public function completeFromDevice(Conversation $conversation, string $token, string $answer, ?string $error = null): ?Message
+    {
+        $pending = Cache::pull(self::deviceKey($token));
+
+        if (! is_array($pending) || (int) ($pending['conversation_id'] ?? 0) !== $conversation->id) {
+            return null;
+        }
+
+        $chunks = array_values(array_map(fn (array $chunk): RetrievedChunk => new RetrievedChunk(...$chunk), (array) $pending['chunks']));
+        $this->lastRetrieved = $chunks;
+        $answer = trim(Str::limit($answer, max(500, (int) config('docchat.device.max_answer_chars')), ''));
+
+        if ($answer === '' && $error === null) {
+            $error = 'The AI on this device returned no answer. Try again, or turn off on-device answers.';
+        }
+
+        $latency = (int) round((microtime(true) - (float) $pending['started_at']) * 1000);
+
+        $message = $conversation->messages()->create([
+            'role' => MessageRole::Assistant,
+            'content' => $answer,
+            'citations' => $this->citations->extract($answer, $chunks),
+            'prompt_tokens' => null,
+            'completion_tokens' => null,
+            'usage_estimated' => false,
+            'ai_source' => AiSource::Device->value,
+            'latency_ms' => max(0, $latency),
+            'error' => $error === null ? null : Str::limit($error, 250),
+        ]);
+
+        $conversation->touch();
+        $this->log($conversation, $message, 'device', (int) ($pending['question_tokens'] ?? 0));
+
+        return $message;
+    }
+
+    public static function deviceKey(string $token): string
+    {
+        return 'docchat:device:'.hash('sha256', $token);
+    }
+
+    /**
+     * Save the question, then answer from the cache, refuse, or fail when
+     * that ends the turn (returns the saved reply). Otherwise returns what
+     * the model call needs, with the chunks in $this->lastRetrieved.
+     *
+     * @param  (callable(string): void)|null  $onDelta
+     * @return Message|array{question: string, history: Collection<int, Message>, started: int, workspace: Workspace, documentIds: list<int>|null, cacheable: bool, vector: array<int, float>}
+     */
+    private function retrieve(Conversation $conversation, string $question, ?callable $onDelta, ?int $topK = null): Message|array
     {
         $question = trim($question);
         $history = $conversation->messages()
@@ -83,15 +249,19 @@ class AnswerService
         }
 
         try {
-            $vector = $this->embeddings->embedQuery($question);
+            $vector = $this->providers->embeddings($workspace)->embedQuery($question);
 
             if ($cacheable && ($hit = $this->cache->findSimilar($workspace, $vector, $documentIds)) !== null) {
                 return $this->answerFromCache($conversation, $hit, $started, $onDelta, UsageRecorder::estimateTokens($question));
             }
 
-            $this->lastRetrieved = $this->retriever->search($workspace, $vector, $documentIds);
+            $this->lastRetrieved = $this->retriever->search($workspace, $vector, $documentIds, topK: $topK);
         } catch (EmbeddingException $exception) {
             report($exception);
+
+            if ($exception->ownKeyRejected) {
+                $this->providers->markRejected($this->providers->embeddingKey($workspace), $exception->getMessage());
+            }
 
             $message = $this->saveAssistant($conversation, '', $started, error: $exception->retryable
                 ? self::BUSY
@@ -109,61 +279,15 @@ class AnswerService
             return $message;
         }
 
-        $messages = $this->prompts->build($question, $this->lastRetrieved, $history->all());
-        $content = '';
-        $result = null;
-        $error = null;
-
-        try {
-            $stream = $this->chat->stream($messages);
-
-            foreach ($stream as $delta) {
-                $content .= $delta;
-
-                if ($onDelta !== null) {
-                    $onDelta($delta);
-                }
-            }
-
-            $result = $stream->getReturn();
-        } catch (ChatRateLimitedException) {
-            $error = self::BUSY;
-        } catch (ChatProviderException $exception) {
-            report($exception);
-            $error = 'The answer could not be completed. '.$exception->getMessage();
-        } catch (Throwable $exception) {
-            report($exception);
-            $error = 'The answer could not be completed. Please try again.';
-        }
-
-        $citations = $this->citations->extract($content, $this->lastRetrieved);
-
-        $message = $this->saveAssistant(
-            $conversation,
-            $result instanceof ChatResult ? $result->content : $content,
-            $started,
-            citations: $citations,
-            result: $result,
-            error: $error,
-        );
-
-        if ($cacheable && $error === null && $result instanceof ChatResult
-            && $citations !== [] && trim($message->content) !== '' && ! EvalRunner::isRefusal($message->content)) {
-            $this->cache->store(
-                $workspace,
-                $question,
-                $vector,
-                $documentIds,
-                $message->content,
-                $citations,
-                (int) $result->promptTokens,
-                (int) $result->completionTokens,
-            );
-        }
-
-        $this->log($conversation, $message, $result?->model, UsageRecorder::estimateTokens($question));
-
-        return $message;
+        return [
+            'question' => $question,
+            'history' => $history,
+            'started' => $started,
+            'workspace' => $workspace,
+            'documentIds' => $documentIds,
+            'cacheable' => $cacheable,
+            'vector' => $vector,
+        ];
     }
 
     /**
@@ -202,6 +326,7 @@ class AnswerService
             'top_similarity' => $this->lastRetrieved === [] ? null : $this->lastRetrieved[0]->similarity,
             'refused' => $message->content === self::NOT_FOUND,
             'cache_hit' => $hit?->hit,
+            'ai_source' => $message->ai_source,
             'error' => $message->error !== null,
         ]);
     }
@@ -217,6 +342,7 @@ class AnswerService
         ?ChatResult $result = null,
         ?string $error = null,
         ?string $cacheHit = null,
+        ?AiSource $source = null,
     ): Message {
         return $conversation->messages()->create([
             'role' => MessageRole::Assistant,
@@ -226,6 +352,7 @@ class AnswerService
             'completion_tokens' => $result?->completionTokens,
             'usage_estimated' => $result->usageEstimated ?? false,
             'cache_hit' => $cacheHit,
+            'ai_source' => $source?->value,
             'latency_ms' => (int) round((hrtime(true) - $started) / 1_000_000),
             'error' => $error === null ? null : Str::limit($error, 250),
         ]);
