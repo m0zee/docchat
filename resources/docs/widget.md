@@ -28,3 +28,7 @@ Yes. The `dc_pub_` key is public by design: it can only ask questions, only from
 ## Answers on the visitor's device
 
 Turn on **Answer on visitors' devices when they can** to let visitors whose Chrome already has its built-in AI model write answers in their own browser. Those answers cost you no tokens. Everyone else is answered as usual, and the widget never starts a model download for a visitor. See [AI in the browser](/docs/device-ai).
+
+## Voice calls from the widget
+
+When calls are on under **Workspace > Calls**, the widget shows a **Call** button. Visitors talk to the assistant in the browser, in the voice and language you chose. See [Voice calls](/docs/calls).

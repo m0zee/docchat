@@ -2,11 +2,14 @@
 
 use App\Http\Controllers\Api\AskController;
 use App\Http\Controllers\Api\AskStreamController;
+use App\Http\Controllers\Api\CallController;
+use App\Http\Controllers\Api\CallSessionController;
 use App\Http\Controllers\Api\ChannelLinkController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DeviceAskController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\EvalController;
+use App\Http\Controllers\Api\VoiceController;
 use App\Http\Controllers\Api\WidgetController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
@@ -34,10 +37,28 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('widget', WidgetController::class)->name('widget');
         Route::post('ask/device', [DeviceAskController::class, 'prepare'])->name('ask.device');
         Route::post('ask/device/complete', [DeviceAskController::class, 'complete'])->name('ask.device.complete');
+        Route::post('calls', [CallController::class, 'store'])->name('calls.store');
     });
+
+    // A browser call in progress: "Authorization: Bearer dc_call_..." from
+    // POST /calls or an outbound call link. Works only for that one call.
+    Route::middleware(['call.token', 'throttle:calls'])->prefix('call')->name('call.')->group(function () {
+        Route::post('answer', [CallSessionController::class, 'answer'])->name('answer');
+        Route::post('turns', [CallSessionController::class, 'turn'])->name('turns');
+        Route::post('end', [CallSessionController::class, 'end'])->name('end');
+    });
+
+    // The self-hosted voice for a browser call's own lines (also its goodbye).
+    Route::post('call/speech', [CallSessionController::class, 'speech'])
+        ->middleware(['call.token:ended', 'throttle:calls'])->name('call.speech');
 
     Route::middleware(['api.key:live,service', 'api.workspace'])->group(function () {
         Route::get('workspace', WorkspaceController::class)->name('workspace');
+
+        Route::middleware('api.ability:ask')->prefix('voice')->name('voice.')->group(function () {
+            Route::post('ask', [VoiceController::class, 'ask'])->name('ask');
+            Route::post('speak', [VoiceController::class, 'speak'])->name('speak');
+        });
 
         Route::post('conversations/end', [ConversationController::class, 'end'])->middleware('api.ability:ask')->name('conversations.end');
 

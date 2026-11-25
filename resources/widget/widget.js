@@ -35,7 +35,8 @@
   var state = {
     conversation: load('conversation', null) || randomId(),
     messages: load('messages', []),
-    config: { title: 'Ask our documents', welcome: 'Hi! Ask me anything about our documents.', color: '#4f46e5', position: 'right', handoff: { email: null, text: '' } },
+    config: { title: 'Ask our documents', welcome: 'Hi! Ask me anything about our documents.', color: '#4f46e5', position: 'right', handoff: { email: null, text: '' }, calls: false },
+    call: null,
     busy: false,
   };
   save('conversation', state.conversation);
@@ -102,6 +103,11 @@
     '.send{border:0;border-radius:10px;background:var(--c);color:#fff;padding:0 14px;cursor:pointer;font-weight:600}',
     '.send:disabled{opacity:.5;cursor:default}',
     '.foot{font-size:11px;color:var(--mut);text-align:center;padding:0 0 8px}',
+    '.callview{flex:1;min-height:0;display:none;flex-direction:column}',
+    '.calling .callview{display:flex}',
+    '.calling>.log,.calling>form,.calling>.foot{display:none}',
+    '.back{margin:0 10px 10px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);border-radius:10px;padding:8px;cursor:pointer}',
+    '[hidden]{display:none!important}',
     '@media (max-width:480px){.wrap{bottom:14px;right:14px}.wrap.left{left:14px}.open .panel{position:fixed;inset:0;width:auto;height:auto;max-height:none;border-radius:0;border:0}.open .bubble{display:none}}',
   ].join('');
 
@@ -112,14 +118,18 @@
   var bubbleIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
   var bubble = el('button', { class: 'bubble', type: 'button', 'aria-label': 'Open chat', 'aria-expanded': 'false', onclick: function () { toggle(); } });
   bubble.innerHTML = bubbleIcon;
+  var callBtn = el('button', { class: 'icon', type: 'button', text: 'Call', title: 'Talk to the assistant by voice', hidden: 'hidden', onclick: startCall });
+  var callView = el('div', { class: 'callview' });
   var form = el('form', { onsubmit: function (e) { e.preventDefault(); ask(); } }, [input, send]);
   var panel = el('div', { class: 'panel', role: 'dialog', 'aria-label': 'Chat' }, [
     el('div', { class: 'head' }, [
       title,
+      callBtn,
       el('button', { class: 'icon', type: 'button', text: 'New chat', title: 'Start a new conversation', onclick: newChat }),
       el('button', { class: 'icon', type: 'button', text: '\u2715', 'aria-label': 'Close chat', onclick: function () { toggle(false); } }),
     ]),
     log,
+    callView,
     form,
     el('div', { class: 'foot', text: 'Answers come from this site\u2019s documents.' }),
   ]);
@@ -373,11 +383,68 @@
     }
   }
 
+  // Voice calls: the call client is a separate script, loaded on first use.
+  function loadCallScript() {
+    if (window.DocChatVoiceCall) return Promise.resolve(window.DocChatVoiceCall);
+    return new Promise(function (resolve, reject) {
+      var tag = document.createElement('script');
+      tag.src = BASE + '/voice-call.js';
+      tag.async = true;
+      tag.onload = function () { window.DocChatVoiceCall ? resolve(window.DocChatVoiceCall) : reject(new Error('load')); };
+      tag.onerror = function () { reject(new Error('load')); };
+      document.head.appendChild(tag);
+    });
+  }
+
+  function endCallView() {
+    if (state.call) state.call.end();
+    state.call = null;
+    panel.classList.remove('calling');
+    callView.textContent = '';
+    callBtn.disabled = false;
+    input.focus();
+  }
+
+  function startCall() {
+    if (state.call || callBtn.disabled) return;
+    callBtn.disabled = true;
+    panel.classList.add('calling');
+    callView.textContent = '';
+    var holder = el('div', { style: 'flex:1;min-height:0;display:flex;flex-direction:column' });
+    callView.appendChild(holder);
+    callView.appendChild(el('button', { class: 'back', type: 'button', text: 'Back to chat', onclick: endCallView }));
+    loadCallScript().then(function (voice) {
+      state.call = voice.mount(holder, {
+        base: BASE,
+        styleRoot: root,
+        color: state.config.color,
+        lang: document.documentElement.lang || undefined,
+        start: function () {
+          return fetch(BASE + '/api/v1/calls', {
+            method: 'POST',
+            headers: headers(),
+            body: JSON.stringify({ external_conversation_id: state.conversation }),
+          }).then(function (r) {
+            return r.json().catch(function () { return null; }).then(function (body) {
+              if (r.ok && body && body.data) return body.data;
+              throw new Error(r.status === 429 ? 'Too many calls at once. Please wait a minute.' : 'Voice calls are not available right now.');
+            });
+          });
+        },
+        onEnd: function () { state.call = null; },
+      });
+    }).catch(function () {
+      holder.appendChild(el('div', { class: 'err', text: 'Voice calls could not load. Please use the chat.' }));
+    });
+  }
+
   function applyConfig(config) {
     state.config = Object.assign(state.config, config || {});
     title.textContent = state.config.title;
     if (/^#[0-9a-fA-F]{3,8}$/.test(state.config.color || '')) wrap.style.setProperty('--c', state.config.color);
     wrap.classList.toggle('left', state.config.position === 'left');
+    var canCall = !!state.config.calls && !!(navigator.mediaDevices && window.MediaRecorder);
+    if (canCall) callBtn.removeAttribute('hidden'); else callBtn.setAttribute('hidden', 'hidden');
     checkDevice();
     render();
   }

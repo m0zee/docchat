@@ -83,6 +83,7 @@ return [
         'workspace.ai-keys' => 'AI keys',
         'workspace.widget' => 'Widget',
         'workspace.channels' => 'Chat apps',
+        'workspace.calls' => 'Calls',
         'workspace.webhooks' => 'Webhooks',
         'workspace.usage' => 'Usage',
     ],
@@ -122,6 +123,83 @@ return [
         ],
         'webhook_url' => env('DOCCHAT_CHANNEL_WEBHOOK_URL'),
         'webhook_secret' => env('DOCCHAT_CHANNEL_WEBHOOK_SECRET'),
+    ],
+
+    // Speech for calls and voice notes. Speech to text uses Groq's free
+    // Whisper with the Groq key above. Voice replies in the chat bots use
+    // Groq's Orpheus voices (100 a day free) and need ffmpeg; they are off by
+    // default, and calls in the browser and on the phone never need them.
+    'voice' => [
+        'stt' => [
+            'driver' => env('DOCCHAT_STT_DRIVER', 'groq'),
+            'model' => env('DOCCHAT_STT_MODEL', 'whisper-large-v3-turbo'),
+            'base_url' => env('DOCCHAT_STT_BASE_URL', env('DOCCHAT_GROQ_BASE_URL', 'https://api.groq.com/openai/v1')),
+            'api_key' => env('GROQ_API_KEY'),
+            'language' => env('DOCCHAT_STT_LANGUAGE'),
+            'max_upload_kb' => (int) env('DOCCHAT_STT_MAX_UPLOAD_KB', 10240),
+            'daily_limit_per_workspace' => (int) env('DOCCHAT_STT_DAILY_LIMIT', 300),
+        ],
+        'replies' => (bool) env('DOCCHAT_VOICE_REPLIES', false),
+        'tts' => [
+            // Voice replies in the bots: groq (Orpheus) or kokoro (self-hosted).
+            'driver' => env('DOCCHAT_TTS_DRIVER', 'groq'),
+            'model' => env('DOCCHAT_TTS_MODEL', 'canopylabs/orpheus-v1-english'),
+            'voice' => env('DOCCHAT_TTS_VOICE', 'hannah'),
+            'base_url' => env('DOCCHAT_TTS_BASE_URL', env('DOCCHAT_GROQ_BASE_URL', 'https://api.groq.com/openai/v1')),
+            'api_key' => env('GROQ_API_KEY'),
+            'max_chars' => (int) env('DOCCHAT_TTS_MAX_CHARS', 600),
+            'ffmpeg' => env('DOCCHAT_FFMPEG', 'ffmpeg'),
+        ],
+        // Kokoro: an open, natural-sounding voice you host yourself (the
+        // "kokoro" service in docker-compose.yml, profile "voice"). Free and
+        // without daily limits. Empty turns it off, and calls use the
+        // browser's own voices and Twilio's voices instead.
+        'kokoro' => [
+            'url' => env('DOCCHAT_KOKORO_URL'),
+            'voice' => env('DOCCHAT_KOKORO_VOICE', 'af_heart'),
+            'timeout' => (int) env('DOCCHAT_KOKORO_TIMEOUT', 30),
+            'max_chars' => (int) env('DOCCHAT_KOKORO_MAX_CHARS', 600),
+        ],
+        // Voice clones: Kyutai Pocket TTS, self-hosted (the "voice-clone"
+        // service in docker-compose.yml, profile "clone"). Free, runs on a
+        // CPU. A clone is only made from the speaker's own consent recording
+        // (docs/calls.md). One language per server: en, es, fr or de.
+        'clone' => [
+            'url' => env('DOCCHAT_CLONE_URL'),
+            'language' => env('DOCCHAT_CLONE_LANGUAGE', 'en'),
+            'timeout' => (int) env('DOCCHAT_CLONE_TIMEOUT', 60),
+            'max_chars' => (int) env('DOCCHAT_CLONE_MAX_CHARS', 500),
+            'per_workspace' => (int) env('DOCCHAT_CLONE_PER_WORKSPACE', 3),
+            'link_valid_days' => (int) env('DOCCHAT_CLONE_LINK_DAYS', 7),
+            // Seconds of recording accepted on the consent page.
+            'min_seconds' => (int) env('DOCCHAT_CLONE_MIN_SECONDS', 8),
+            'max_seconds' => (int) env('DOCCHAT_CLONE_MAX_SECONDS', 45),
+        ],
+    ],
+
+    // The calling agent (docs/calls.md).
+    'calls' => [
+        'max_minutes' => (int) env('DOCCHAT_CALL_MAX_MINUTES', 10),
+        'max_turns' => (int) env('DOCCHAT_CALL_MAX_TURNS', 30),
+        // Answers are read aloud, so they are cut to this many characters.
+        'max_spoken_chars' => (int) env('DOCCHAT_CALL_MAX_SPOKEN_CHARS', 700),
+        // Outbound phone calls only start inside these hours (24 h clock).
+        'calling_hours' => env('DOCCHAT_CALLING_HOURS', '09:00-20:00'),
+        'timezone' => env('DOCCHAT_CALLING_TIMEZONE', env('APP_TIMEZONE', 'UTC')),
+        'link_valid_days' => (int) env('DOCCHAT_CALL_LINK_DAYS', 7),
+        'rate_limit_per_minute' => (int) env('DOCCHAT_CALL_RATE_LIMIT_PER_MINUTE', 30),
+        // Phone answers run in a job; the line plays a filler and a hold
+        // sound while it waits, for at most this many seconds.
+        'phone_answer_wait_seconds' => (int) env('DOCCHAT_PHONE_ANSWER_WAIT', 25),
+        'twilio' => [
+            'account_sid' => env('TWILIO_ACCOUNT_SID'),
+            'auth_token' => env('TWILIO_AUTH_TOKEN'),
+            // The Twilio number outbound calls come from, in E.164.
+            'from_number' => env('TWILIO_PHONE_NUMBER'),
+            'base_url' => env('TWILIO_API_BASE_URL', 'https://api.twilio.com/2010-04-01'),
+            // The public https address Twilio calls, if APP_URL is not it.
+            'webhook_base_url' => env('TWILIO_WEBHOOK_BASE_URL'),
+        ],
     ],
 
     'evals' => [

@@ -79,7 +79,7 @@ One bot serves every workspace. A workspace owner links a chat with a one-time c
    (`--list` shows keys, `--revoke=<id>` revokes one.) Put it in a new n8n Header Auth credential, **DocChat service key**: name `Authorization`, value `Bearer dc_svc_...`.
 2. In n8n, create a **Telegram API** credential with the BotFather token.
 3. In `.env`, set `TELEGRAM_BOT_USERNAME` (without the @), keep `DOCCHAT_CHANNEL_WEBHOOK_URL=http://n8n:5678/webhook/{channel}-docchat`, and set `DOCCHAT_CHANNEL_WEBHOOK_SECRET` to a random value (`openssl rand -hex 24`). DocChat and n8n both read it. Restart: `docker compose -f docker-compose.prod.yml up -d`.
-4. Import `telegram-bot.json`, pick the Telegram credential in the trigger and the two Telegram nodes, the service key in every HTTP Request node, and publish it. Telegram only delivers to HTTPS addresses, so the trigger works on the server (`https://n8n.<domain>`) or locally through the [tunnel](#testing-webhooks-from-the-internet-free-tunnel).
+4. Import `telegram-bot.json`, pick the Telegram credential in the trigger and the Telegram nodes (Typing, Reply, Get voice note, Send voice reply), the service key in every HTTP Request node, and publish it. Telegram only delivers to HTTPS addresses, so the trigger works on the server (`https://n8n.<domain>`) or locally through the [tunnel](#testing-webhooks-from-the-internet-free-tunnel).
 
 ### Use it
 
@@ -87,6 +87,7 @@ One bot serves every workspace. A workspace owner links a chat with a one-time c
 - Ask questions in the chat. Answers come back as Telegram HTML with a Sources list, split under Telegram's 4096-character limit. Each chat keeps its own conversation, so follow-up questions work; `/new` starts over.
 - Send a PDF, TXT or Markdown file in a private chat and it is added to the workspace; the bot says when it is ready. Files sent in groups are ignored, so group members can ask but not add documents.
 - `/unlink` (or **Unlink** on the Chat apps page) disconnects the chat.
+- Send a **voice message** and the bot answers it: first what it heard, then the answer with sources. In groups it only takes voice messages that reply to the bot. With `DOCCHAT_VOICE_REPLIES=true` on the server it also sends the answer as audio (see [docs/calls.md](../docs/calls.md#voice-notes-in-telegram-and-whatsapp)).
 
 ### How it talks to DocChat
 
@@ -97,6 +98,7 @@ One bot serves every workspace. A workspace owner links a chat with a one-time c
 | question | `POST /api/v1/ask` with `X-DocChat-Link: telegram:<chat id>`, `channel=telegram`, `format=telegram_html` |
 | `/new` | `POST /api/v1/conversations/end` |
 | file | `POST /api/v1/documents` with `source=telegram` and the chat id in `meta` |
+| voice message | **Get voice note** downloads it, then `POST /api/v1/voice/ask` (multipart `audio`); when `voice_replies` is true, `POST /api/v1/voice/speak` returns an MP3 for **Send voice reply** |
 | file ready | DocChat POSTs `document.ready` / `document.failed` to `.../webhook/telegram-docchat`, signed with `DOCCHAT_CHANNEL_WEBHOOK_SECRET` |
 
 The service key can act in any workspace whose chat is linked, so treat it like a server password. It cannot run evals or reach a chat that nobody linked.
@@ -122,11 +124,13 @@ For a free test, use the **test number** Meta gives every new app and message it
 2. In n8n, create two credentials:
    - **WhatsApp API** with the access token and the WhatsApp Business Account ID, for the send and media nodes.
    - **WhatsApp OAuth API** (the trigger's credential) with the app's App ID and App Secret.
-3. Import `whatsapp-bot.json`. Pick the WhatsApp credentials in the trigger, **Get file URL**, **Download file** (predefined credential type WhatsApp API) and **Reply**, and the DocChat service key in the HTTP Request nodes. Publish it.
+3. Import `whatsapp-bot.json`. Pick the WhatsApp credentials in the trigger, **Get file URL**, **Download file**, **Get voice note URL**, **Download voice note** (predefined credential type WhatsApp API), **Reply** and **Send voice reply**, and the DocChat service key in the HTTP Request nodes. Publish it.
 4. Meta must reach the trigger over HTTPS, so do this on the server, or locally with the [tunnel](#testing-webhooks-from-the-internet-free-tunnel). When the workflow is published, n8n registers the webhook with Meta and answers Meta's verification request (`hub.challenge`) itself. If you set it up by hand under WhatsApp > Configuration instead, use the trigger's production URL and subscribe to the `messages` field.
 5. In `.env`, set `WHATSAPP_NUMBER` (digits with country code, for the link on the Chat apps page) and the same `DOCCHAT_CHANNEL_WEBHOOK_URL` / `DOCCHAT_CHANNEL_WEBHOOK_SECRET` as for Telegram. `{channel}` becomes `whatsapp`, so "file ready" messages reach `.../webhook/whatsapp-docchat`.
 
 On the Chat apps page, an owner creates a code. The **Open WhatsApp** link opens a chat with the number and `link <code>` already typed.
+
+Voice messages work like in Telegram: the bot replies with what it heard and the answer, plus an audio answer when `DOCCHAT_VOICE_REPLIES=true`. Each audio reply is one more message, so it counts like any other reply in the pricing above.
 
 ## How the signature check works
 

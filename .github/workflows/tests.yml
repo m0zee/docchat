@@ -128,3 +128,9 @@ jobs:
 
       - name: Check the widget in a browser
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/widget.cjs
+
+      - name: Check voice calls in a browser (fake microphone)
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/voice-call.cjs
+
+      - name: Check the voice consent recorder in a browser (fake microphone)
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/voice-consent.cjs

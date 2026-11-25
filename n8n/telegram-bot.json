@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## DocChat Telegram bot\nOne bot for every workspace. A chat is linked with `/start <code>` (code from DocChat > Workspace > Chat apps), then questions go to that workspace with a **service key** and the `X-DocChat-Link` header.\n\n- `/new` starts a new conversation, `/unlink` unlinks, `/help`.\n- Files sent in a private chat are added to the workspace; the second trigger tells the chat when they are ready.\n- In groups the bot only answers commands, @mentions and replies.\n\nSetup: see `n8n/README.md`.",
+        "content": "## DocChat Telegram bot\nOne bot for every workspace. A chat is linked with `/start <code>` (code from DocChat > Workspace > Chat apps), then questions go to that workspace with a **service key** and the `X-DocChat-Link` header.\n\n- `/new` starts a new conversation, `/unlink` unlinks, `/help`.\n- Files sent in a private chat are added to the workspace; the second trigger tells the chat when they are ready.\n- In groups the bot only answers commands, @mentions and replies.\n- Voice messages are transcribed (Groq Whisper) and answered; with `DOCCHAT_VOICE_REPLIES=true` the answer also comes back as audio.\n\nSetup: see `n8n/README.md`.",
         "width": 500,
         "height": 380
       },
@@ -40,7 +40,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Decides what to do with each Telegram message.\n// In groups the bot only answers commands, @mentions and replies to itself.\nconst bot = String($env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').toLowerCase();\nconst message = $json.message || {};\nconst chat = message.chat || {};\nconst text = String(message.text || message.caption || '').trim();\nconst isGroup = chat.type === 'group' || chat.type === 'supergroup';\nconst [first = '', ...rest] = text.split(/\\s+/);\n\nlet command = null;\nif (first.startsWith('/')) {\n  const [name, target] = first.slice(1).split('@');\n  if (!target || !bot || target.toLowerCase() === bot) command = name.toLowerCase();\n}\n\nconst mentioned = bot !== '' && text.toLowerCase().includes('@' + bot);\nconst repliedToBot = bot !== '' && String(message.reply_to_message?.from?.username || '').toLowerCase() === bot;\n\nlet route = 'ignore';\nif (command === 'start') route = rest[0] ? 'link' : 'start';\nelse if (command === 'help') route = 'help';\nelse if (command === 'new') route = 'new';\nelse if (command === 'unlink') route = 'unlink';\nelse if (message.document) route = isGroup ? 'ignore' : 'document';\nelse if (text !== '' && !command && (!isGroup || mentioned || repliedToBot)) route = 'ask';\n\nconst question = bot ? text.replace(new RegExp('@' + bot, 'ig'), '').trim() : text;\nconst name = [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ');\n\nreturn {\n  json: {\n    route,\n    chat_id: String(chat.id),\n    message_id: message.message_id,\n    is_group: isGroup,\n    link: `telegram:${chat.id}`,\n    code: rest[0] || null,\n    question,\n    label: chat.title || name || chat.username || String(chat.id),\n    file_name: message.document?.file_name || null,\n  },\n  binary: $input.item.binary,\n};"
+        "jsCode": "// Decides what to do with each Telegram message.\n// In groups the bot only answers commands, @mentions and replies to itself.\nconst bot = String($env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').toLowerCase();\nconst message = $json.message || {};\nconst chat = message.chat || {};\nconst text = String(message.text || message.caption || '').trim();\nconst isGroup = chat.type === 'group' || chat.type === 'supergroup';\nconst [first = '', ...rest] = text.split(/\\s+/);\n\nlet command = null;\nif (first.startsWith('/')) {\n  const [name, target] = first.slice(1).split('@');\n  if (!target || !bot || target.toLowerCase() === bot) command = name.toLowerCase();\n}\n\nconst mentioned = bot !== '' && text.toLowerCase().includes('@' + bot);\nconst repliedToBot = bot !== '' && String(message.reply_to_message?.from?.username || '').toLowerCase() === bot;\n\nlet route = 'ignore';\nif (command === 'start') route = rest[0] ? 'link' : 'start';\nelse if (command === 'help') route = 'help';\nelse if (command === 'new') route = 'new';\nelse if (command === 'unlink') route = 'unlink';\nelse if (message.voice || message.audio) route = (!isGroup || repliedToBot) ? 'voice' : 'ignore';\nelse if (message.document) route = isGroup ? 'ignore' : 'document';\nelse if (text !== '' && !command && (!isGroup || mentioned || repliedToBot)) route = 'ask';\n\nconst question = bot ? text.replace(new RegExp('@' + bot, 'ig'), '').trim() : text;\nconst name = [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ');\n\nreturn {\n  json: {\n    route,\n    chat_id: String(chat.id),\n    message_id: message.message_id,\n    is_group: isGroup,\n    link: `telegram:${chat.id}`,\n    code: rest[0] || null,\n    question,\n    label: chat.title || name || chat.username || String(chat.id),\n    file_name: message.document?.file_name || null,\n    file_id: message.voice?.file_id || message.audio?.file_id || null,\n  },\n  binary: $input.item.binary,\n};"
       },
       "id": "1ccbadf4-6e65-5d95-825b-d6e65924f0f6",
       "name": "Route",
@@ -222,6 +222,30 @@
               },
               "renameOutput": true,
               "outputKey": "ask"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "34a2c293-f22b-5f81-902f-6a1d93ba32b9",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "voice",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "voice"
             }
           ]
         },
@@ -506,7 +530,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Turns each DocChat response into Telegram messages (HTML parse mode).\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst notLinked = 'This chat is not linked to a DocChat workspace yet. In DocChat, open <b>Workspace &gt; Chat apps</b>, create a link code, and open the link it gives you.';\nconst help = [\n  '<b>DocChat bot</b>',\n  'Ask a question about your workspace\\'s documents and I answer with sources.',\n  '',\n  '/start CODE: link this chat to a workspace (code from Workspace &gt; Chat apps)',\n  '/new: start a new conversation',\n  '/unlink: unlink this chat',\n  '/help: this message',\n  '',\n  'Send a PDF, TXT or Markdown file in a private chat to add it to the workspace.',\n  'In groups, mention me or reply to me.',\n].join('\\n');\n\nconst out = [];\n\n$input.all().forEach((item, index) => {\nconst from = $('Route').itemMatching(index).json;\nconst status = item.json.statusCode;\nconst body = item.json.body || {};\nconst error = body.error || {};\nlet texts;\nif (from.route === 'help') {\n  texts = [help];\n} else if (error.code === 'chat_not_linked') {\n  texts = [notLinked];\n} else if (status === 429 || error.code === 'model_busy' || error.code === 'rate_limited') {\n  texts = ['The model is busy. Try again in a minute.'];\n} else if (from.route === 'link') {\n  texts = status === 200\n    ? [`Linked to <b>${esc(body.data.workspace.name)}</b>. Ask me anything about its documents.`]\n    : ['That code did not work. It may be used or older than 15 minutes. Create a new one in DocChat.'];\n} else if (from.route === 'start') {\n  texts = body.data?.linked\n    ? [`This chat is linked to <b>${esc(body.data.workspace.name)}</b>. Ask me anything about its documents.`]\n    : [notLinked];\n} else if (from.route === 'new') {\n  texts = ['Started a new conversation.'];\n} else if (from.route === 'unlink') {\n  texts = [body.data?.was_linked ? 'This chat is unlinked.' : 'This chat was not linked.'];\n} else if (from.route === 'document') {\n  texts = status === 202\n    ? [`Got <b>${esc(from.file_name)}</b>. I will tell you when it is ready.`]\n    : [`I could not take that file: ${esc(Object.values(error.details?.fields || {}).flat()[0] || error.message || 'unknown error')}`];\n} else if (status === 200 && Array.isArray(body.data?.formatted)) {\n  texts = body.data.formatted;\n} else {\n  texts = ['Something went wrong while answering. Please try again.'];\n}\n\nfor (const text of texts) {\n  out.push({ json: { chat_id: from.chat_id, text } });\n}\n});\n\nreturn out;"
+        "jsCode": "// Turns each DocChat response into Telegram messages (HTML parse mode).\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst notLinked = 'This chat is not linked to a DocChat workspace yet. In DocChat, open <b>Workspace &gt; Chat apps</b>, create a link code, and open the link it gives you.';\nconst help = [\n  '<b>DocChat bot</b>',\n  'Ask a question about your workspace\\'s documents and I answer with sources.',\n  '',\n  '/start CODE: link this chat to a workspace (code from Workspace &gt; Chat apps)',\n  '/new: start a new conversation',\n  '/unlink: unlink this chat',\n  '/help: this message',\n  '',\n  'Send a PDF, TXT or Markdown file in a private chat to add it to the workspace.',\n  'Send a voice message to ask by voice.',\n  'In groups, mention me or reply to me.',\n].join('\\n');\n\nconst out = [];\n\n$input.all().forEach((item, index) => {\nconst from = $('Route').itemMatching(index).json;\nconst status = item.json.statusCode;\nconst body = item.json.body || {};\nconst error = body.error || {};\nlet texts;\nif (from.route === 'help') {\n  texts = [help];\n} else if (error.code === 'chat_not_linked') {\n  texts = [notLinked];\n} else if (from.route === 'voice' && error.code === 'no_speech') {\n  texts = ['I could not hear any words in that voice message.'];\n} else if (status === 429 || error.code === 'model_busy' || error.code === 'rate_limited' || error.code === 'speech_busy') {\n  texts = ['The model is busy. Try again in a minute.'];\n} else if (from.route === 'link') {\n  texts = status === 200\n    ? [`Linked to <b>${esc(body.data.workspace.name)}</b>. Ask me anything about its documents.`]\n    : ['That code did not work. It may be used or older than 15 minutes. Create a new one in DocChat.'];\n} else if (from.route === 'start') {\n  texts = body.data?.linked\n    ? [`This chat is linked to <b>${esc(body.data.workspace.name)}</b>. Ask me anything about its documents.`]\n    : [notLinked];\n} else if (from.route === 'new') {\n  texts = ['Started a new conversation.'];\n} else if (from.route === 'unlink') {\n  texts = [body.data?.was_linked ? 'This chat is unlinked.' : 'This chat was not linked.'];\n} else if (from.route === 'document') {\n  texts = status === 202\n    ? [`Got <b>${esc(from.file_name)}</b>. I will tell you when it is ready.`]\n    : [`I could not take that file: ${esc(Object.values(error.details?.fields || {}).flat()[0] || error.message || 'unknown error')}`];\n} else if (status === 200 && Array.isArray(body.data?.formatted)) {\n  texts = from.route === 'voice'\n    ? [`\\u{1F3A4} <i>${esc(body.data.transcript)}</i>`, ...body.data.formatted]\n    : body.data.formatted;\n} else {\n  texts = ['Something went wrong while answering. Please try again.'];\n}\n\nfor (const text of texts) {\n  out.push({ json: { chat_id: from.chat_id, text } });\n}\n});\n\nreturn out;"
       },
       "id": "4e5a637d-3b47-5703-934a-9e04a9fdfec9",
       "name": "Build reply",
@@ -646,6 +670,185 @@
         940,
         920
       ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "get",
+        "fileId": "={{ $json.file_id }}",
+        "download": true,
+        "additionalFields": {}
+      },
+      "id": "ef44acaf-cd77-5cbc-b09c-ffae52439a2e",
+      "name": "Get voice note",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        960
+      ],
+      "webhookId": "35a35bd3-1a2c-535f-89ae-1a608810054f"
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/voice/ask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DocChat-Link",
+              "value": "={{ $('Route').item.json.link }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 90000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "channel",
+              "value": "telegram"
+            },
+            {
+              "parameterType": "formData",
+              "name": "external_conversation_id",
+              "value": "={{ $('Route').item.json.link }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "format",
+              "value": "telegram_html"
+            }
+          ]
+        }
+      },
+      "id": "4833b293-df84-5722-8fa0-01c7fcaf9392",
+      "name": "Ask by voice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        940,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9361590f-8bb6-592f-bb5f-4ba1067af376",
+              "leftValue": "={{ $json.statusCode === 200 && $json.body?.data?.voice_replies === true && String($json.body?.data?.spoken || '') !== '' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "8dd4c8ce-a84f-5db5-b865-c60f0b55e5c6",
+      "name": "Voice reply on?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1180,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/voice/speak",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DocChat-Link",
+              "value": "={{ $('Route').item.json.link }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.body.data.spoken }) }}",
+        "options": {
+          "timeout": 90000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "d8d014b9-67d9-5d57-ad87-2b81c1aac567",
+      "name": "Speak answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1420,
+        1060
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "sendAudio",
+        "chatId": "={{ $('Route').item.json.chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "additionalFields": {
+          "title": "Answer"
+        }
+      },
+      "id": "d8c84347-1c9d-5e4a-9d1e-95b2d2af9e41",
+      "name": "Send voice reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1660,
+        1060
+      ],
+      "webhookId": "96e1bd5c-d7a0-5d96-8c2e-6bc1d69a180a"
     }
   ],
   "connections": {
@@ -718,6 +921,13 @@
         [
           {
             "node": "Typing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get voice note",
             "type": "main",
             "index": 0
           }
@@ -868,6 +1078,56 @@
         [
           {
             "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get voice note": {
+      "main": [
+        [
+          {
+            "node": "Ask by voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask by voice": {
+      "main": [
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Voice reply on?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice reply on?": {
+      "main": [
+        [
+          {
+            "node": "Speak answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Speak answer": {
+      "main": [
+        [
+          {
+            "node": "Send voice reply",
             "type": "main",
             "index": 0
           }

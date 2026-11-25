@@ -48,8 +48,9 @@ class AnswerService
 
     /**
      * @param  (callable(string): void)|null  $onDelta  called with each streamed text piece
+     * @param  string|null  $style  extra instructions on how to word the answer (calls use it)
      */
-    public function answer(Conversation $conversation, string $question, ?callable $onDelta = null): Message
+    public function answer(Conversation $conversation, string $question, ?callable $onDelta = null, ?string $style = null): Message
     {
         $prepared = $this->retrieve($conversation, $question, $onDelta);
 
@@ -60,7 +61,7 @@ class AnswerService
         ['question' => $question, 'history' => $history, 'started' => $started, 'workspace' => $workspace,
             'documentIds' => $documentIds, 'cacheable' => $cacheable, 'vector' => $vector] = $prepared;
 
-        $messages = $this->prompts->build($question, $this->lastRetrieved, $history->all());
+        $messages = $this->prompts->build($question, $this->lastRetrieved, $history->all(), $style);
         $content = '';
         $result = null;
         $error = null;
@@ -104,7 +105,7 @@ class AnswerService
             source: $chat->source,
         );
 
-        if ($cacheable && $error === null && $result instanceof ChatResult
+        if ($cacheable && $style === null && $error === null && $result instanceof ChatResult
             && $citations !== [] && trim($message->content) !== '' && ! EvalRunner::isRefusal($message->content)) {
             $this->cache->store(
                 $workspace,

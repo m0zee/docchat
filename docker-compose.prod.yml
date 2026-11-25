@@ -116,6 +116,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Optional natural voice for calls (Kokoro, Apache-2.0), on CPU. Not started
+  # by default: docker compose --profile voice up -d kokoro, then set
+  # DOCCHAT_KOKORO_URL=http://kokoro:8880. Works on amd64 and arm64 (the
+  # Oracle free VM); needs about 2 GB of RAM.
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0
+    profiles: ["voice"]
+    restart: unless-stopped
+
+  # Voice clones (Kyutai Pocket TTS, free, CPU). Off by default:
+  # docker compose --profile clone up -d voice-clone, then set
+  # DOCCHAT_CLONE_URL=http://voice-clone:8000. Needs HF_TOKEN from a free
+  # Hugging Face account that accepted the model's terms, and about 2 GB of RAM.
+  voice-clone:
+    build: ./docker/voice-clone
+    profiles: ["clone"]
+    restart: unless-stopped
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      DOCCHAT_CLONE_LANGUAGE: ${DOCCHAT_CLONE_LANGUAGE:-en}
+    volumes:
+      - voice_clone_models:/models
+
   caddy:
     image: caddy:2.11.9
     ports:
@@ -134,6 +157,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  voice_clone_models:
   pgdata:
   storage:
   caddy_data:

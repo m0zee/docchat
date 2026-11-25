@@ -4,15 +4,23 @@ namespace App\Providers;
 
 use App\Contracts\ChatProvider;
 use App\Contracts\EmbeddingProvider;
+use App\Contracts\SpeechToText;
+use App\Contracts\TextToSpeech;
 use App\Services\Chat\GeminiChatProvider;
 use App\Services\Chat\GroqChatProvider;
 use App\Services\Chat\OpenRouterChatProvider;
 use App\Services\Embedding\CachingEmbeddingProvider;
 use App\Services\Embedding\GeminiEmbeddingProvider;
+use App\Services\Voice\GroqSpeechToText;
+use App\Services\Voice\GroqTextToSpeech;
+use App\Services\Voice\KokoroTextToSpeech;
 use App\Support\CurrentWorkspace;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 
@@ -24,6 +32,10 @@ class DocChatServiceProvider extends ServiceProvider
         Scramble::configure()->withDocumentTransformers(function (OpenApi $openApi): void {
             $openApi->secure(SecurityScheme::http('bearer', 'API key'));
         });
+
+        // Browser calls: per call token, so one visitor cannot flood the agent.
+        RateLimiter::for('calls', fn (Request $request) => Limit::perMinute(max(1, (int) config('docchat.calls.rate_limit_per_minute')))
+            ->by('call:'.hash('sha256', (string) $request->bearerToken()).':'.$request->ip()));
     }
 
     public function register(): void
@@ -45,6 +57,19 @@ class DocChatServiceProvider extends ServiceProvider
                 ? new CachingEmbeddingProvider($provider)
                 : $provider;
         });
+
+        $this->app->bind(SpeechToText::class, function (): SpeechToText {
+            $driver = (string) config('docchat.voice.stt.driver');
+
+            return match ($driver) {
+                'groq' => $this->app->make(GroqSpeechToText::class),
+                default => throw new InvalidArgumentException('Unsupported speech to text driver ['.$driver.'].'),
+            };
+        });
+
+        $this->app->bind(TextToSpeech::class, fn (): TextToSpeech => config('docchat.voice.tts.driver') === 'kokoro'
+            ? $this->app->make(KokoroTextToSpeech::class)
+            : $this->app->make(GroqTextToSpeech::class));
 
         $this->app->bind(ChatProvider::class, function (): ChatProvider {
             $driver = (string) config('docchat.chat.driver');

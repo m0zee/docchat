@@ -26,7 +26,7 @@ class ConversationController extends Controller
     public function end(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'channel' => ['nullable', Rule::enum(ConversationChannel::class)->except([ConversationChannel::Web, ConversationChannel::Eval])],
+            'channel' => ['nullable', Rule::enum(ConversationChannel::class)->except([ConversationChannel::Web, ConversationChannel::Eval, ConversationChannel::Voice, ConversationChannel::Phone])],
             'external_conversation_id' => ['required', 'string', 'max:255'],
         ]);
 
