@@ -26,6 +26,7 @@ class Docs
         'Channels' => [
             'widget' => 'Website widget',
             'chat-apps' => 'Telegram, WhatsApp and Discord',
+            'calls' => 'Voice calls',
             'api-guide' => 'API and webhooks',
         ],
         'AI' => [

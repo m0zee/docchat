@@ -9,6 +9,7 @@ it('shows the landing page with the main sections', function () {
         ->assertSee('Ask your documents. Get answers with sources.')
         ->assertSee('id="features"', false)
         ->assertSee('You choose where the AI runs')
+        ->assertSee('Voice calls that sound natural')
         ->assertSee(route('pricing'))
         ->assertSee(route('docs.show'));
 });
@@ -20,6 +21,8 @@ it('shows the pricing page with free plans only', function () {
         ->assertSee('Bring your own key')
         ->assertSee('Self-host')
         ->assertSee('20 questions a minute per person')
+        ->assertSee('Voice calls: what is free')
+        ->assertSee('Use the Twilio trial credit, paid to Twilio after it')
         ->assertDontSee('$')
         ->assertDontSee('/month');
 });

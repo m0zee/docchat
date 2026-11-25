@@ -94,6 +94,15 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Optional natural voice for calls (Kokoro, Apache-2.0), on CPU. Not started
+  # by default: docker compose --profile voice up -d kokoro, then set
+  # DOCCHAT_KOKORO_URL=http://kokoro:8880. Works on amd64 and arm64 (the
+  # Oracle free VM); needs about 2 GB of RAM.
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0
+    profiles: ["voice"]
+    restart: unless-stopped
+
   vite:
     image: node:24-alpine
     working_dir: /var/www/html

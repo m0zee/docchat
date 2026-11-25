@@ -24,28 +24,28 @@ calling agent PR (#14), which also merges PR #13 for its site pages.
 
 ## Tasks
 
-- [ ] V1. Voice profile per workspace (`settings.calls.voice`): assistant name, personality,
+- [x] V1. Voice profile per workspace (`settings.calls.voice`): assistant name, personality,
       language and accent, auto language, gender, age, speed, pitch, web voice engine and
       voice, phone voice, interruptions, pace, fillers, hold music, background sound,
       voicemail. Validation and a catalog of languages and voices.
-- [ ] V2. Natural, still-disclosed wording: "Hi, this is Ava, Harbor's virtual assistant",
+- [x] V2. Natural, still-disclosed wording: "Hi, this is Ava, Harbor's virtual assistant",
       phrases in 7 languages (English, Spanish, French, German, Hindi, Urdu, Arabic), varied
       per turn, and a custom greeting gets a disclosure added if it has none.
-- [ ] V3. Spoken answer style: AnswerService takes a style note (short spoken sentences,
+- [x] V3. Spoken answer style: AnswerService takes a style note (short spoken sentences,
       the personality, the caller's language). Voice-styled answers don't enter the cache.
-- [ ] V4. Auto language detection: Whisper's detected language is saved on the call; fixed
+- [x] V4. Auto language detection: Whisper's detected language is saved on the call; fixed
       phrases and the browser voice follow it.
-- [ ] V5. Kokoro: optional `kokoro` service in Docker Compose (profile `voice`),
+- [x] V5. Kokoro: optional `kokoro` service in Docker Compose (profile `voice`),
       `KokoroTextToSpeech`, `POST /api/v1/call/speech` limited to what the assistant said
       on that call, an audio cache, and a preview on Workspace > Calls. Bots' voice replies
       can use it too.
-- [ ] V6. Browser client: best-voice picking, rate and pitch, Kokoro playback with
+- [x] V6. Browser client: best-voice picking, rate and pitch, Kokoro playback with
       sentence pipelining, interruptions, pace, fillers, hold music, background sound.
-- [ ] V7. Phone line: voice, language, prosody rate and bargeIn from the profile; answers in
+- [x] V7. Phone line: voice, language, prosody rate and bargeIn from the profile; answers in
       a job with a filler and hold sound while waiting; Kokoro via `<Play>`; voicemail
       detection (hang up or leave a message).
-- [ ] V8. Workspace > Calls: "Voice and personality" card with previews (browser voice,
+- [x] V8. Workspace > Calls: "Voice and personality" card with previews (browser voice,
       Kokoro voice) and clear "free" and "uses trial credit" labels.
-- [ ] V9. Tests (Pest, browser checks), Pint, PHPStan.
-- [ ] V10. README, `docs/calls.md`, the user guide at `/docs`, the landing page feature list
+- [x] V9. Tests (Pest, browser checks), Pint, PHPStan.
+- [x] V10. README, `docs/calls.md`, the user guide at `/docs`, the landing page feature list
       and the pricing page.

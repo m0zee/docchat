@@ -32,5 +32,18 @@ All settings live in `.env`, explained in `.env.example`. A few you may want:
 | `DOCCHAT_OWN_KEYS` | Let workspaces add their own AI keys (default on) |
 | `DOCCHAT_DEVICE_AI` | Allow answers written in the browser (default on) |
 | `DOCCHAT_RAG_SIMILARITY_THRESHOLD` | How close a passage must be to count (0 to 1) |
+| `DOCCHAT_KOKORO_URL` | The self-hosted natural voice for calls, for example `http://kokoro:8880` |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | The phone line, on a free Twilio trial |
+| `DOCCHAT_CALLING_HOURS` | When outbound phone calls may start (default `09:00-20:00`) |
+
+## A natural voice for calls
+
+Calls work without it, using each visitor's browser voice. For one natural voice everywhere, including the phone line, run the open Kokoro voice model next to DocChat. It is free and needs about 2 GB of memory:
+
+```bash
+docker compose --profile voice up -d kokoro
+```
+
+Then set `DOCCHAT_KOKORO_URL=http://kokoro:8880` in `.env` and pick **Self-hosted natural voice** under **Workspace > Calls**. The full setup, including the phone line, is in `docs/calls.md` in the repository.
 
 Keep `APP_KEY` safe and unchanged: it encrypts workspaces' own AI keys. If you must change it, put the old one in `APP_PREVIOUS_KEYS`.

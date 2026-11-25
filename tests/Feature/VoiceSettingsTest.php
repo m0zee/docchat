@@ -445,7 +445,7 @@ test('a phone answer that never comes ends the wait politely', function () {
 
 // Voicemail
 
-function outboundPhoneCall(string $phone = '+923001234567'): Call
+function voicemailTestCall(string $phone = '+923001234567'): Call
 {
     $contact = CallContact::query()->create([
         'workspace_id' => test()->workspace->id, 'name' => 'Sara Khan', 'phone' => $phone,
@@ -461,7 +461,7 @@ function outboundPhoneCall(string $phone = '+923001234567'): Call
 
 test('voicemail detection asks Twilio to wait for the beep and leaves a disclosed message', function () {
     VoiceProfile::save($this->workspace, ['voicemail' => 'leave_message']);
-    $call = outboundPhoneCall();
+    $call = voicemailTestCall();
     Http::fake(['api.twilio.com/*' => Http::response(['sid' => 'CA777'], 201)]);
 
     (new PlaceTwilioCallJob($call->id))->handle(app(TwilioClient::class), app(CurrentWorkspace::class));
@@ -481,21 +481,21 @@ test('voicemail detection can just hang up, and a person still gets the conversa
     VoiceProfile::save($this->workspace, ['voicemail' => 'hang_up']);
     Http::fake(['api.twilio.com/*' => Http::response(['sid' => 'CA1'], 201)]);
 
-    $machine = outboundPhoneCall();
+    $machine = voicemailTestCall();
     (new PlaceTwilioCallJob($machine->id))->handle(app(TwilioClient::class), app(CurrentWorkspace::class));
     Http::assertSent(fn (Request $request) => $request['MachineDetection'] === 'Enable');
     $content = voiceTwilio('twilio/voice/calls/'.$machine->id.'/answer', ['CallSid' => 'CA1', 'AnsweredBy' => 'machine_start'])->getContent();
     expect($content)->toContain('<Hangup/>')->not->toContain('<Say');
     expect($machine->refresh()->end_reason)->toBe('voicemail_hung_up');
 
-    $person = outboundPhoneCall(phone: '+923001234568');
+    $person = voicemailTestCall(phone: '+923001234568');
     $person->forceFill(['provider_sid' => 'CA2'])->save();
     $content = voiceTwilio('twilio/voice/calls/'.$person->id.'/answer', ['CallSid' => 'CA2', 'AnsweredBy' => 'human'])->getContent();
     expect($content)->toContain('<Gather')->toContain('stop calling');
 });
 
 test('voicemail detection is off by default, so no Twilio credit is used for it', function () {
-    $call = outboundPhoneCall();
+    $call = voicemailTestCall();
     Http::fake(['api.twilio.com/*' => Http::response(['sid' => 'CA9'], 201)]);
 
     (new PlaceTwilioCallJob($call->id))->handle(app(TwilioClient::class), app(CurrentWorkspace::class));

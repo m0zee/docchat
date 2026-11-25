@@ -5,6 +5,7 @@ DocChat answers questions from your own documents. You upload files, and DocChat
 - **Chat with your documents** in the app, alone or with your team.
 - **Add a chat bubble to your website** so visitors can ask without an account.
 - **Answer in Telegram, WhatsApp and Discord** from the same documents.
+- **Talk to callers** on your website or a phone line, with a natural voice in seven languages ([Voice calls](/docs/calls)).
 - **Connect your own systems** with the REST API and signed webhooks.
 - **Choose where the AI runs**: on DocChat's free keys, on your own free key, or in the asker's browser.
 
