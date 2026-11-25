@@ -32,8 +32,19 @@ The assistant always says it is a virtual assistant when the call starts. Caller
 |---|---|---|
 | The visitor's browser voice | Website calls | Free. Edge and Chrome have very natural voices |
 | Self-hosted natural voice (Kokoro) | Website calls, phone calls, voice replies in bots | Free, if the server runs it (see [Self-hosting](/docs/self-hosting)) |
+| Voice clone | Website calls, phone calls | Free, if the server runs it (see below) |
 | Twilio basic voice | Phone calls | Free |
 | Amazon and Google voices | Phone calls | Use the Twilio trial credit, then a small charge per call |
+
+## Voice clones
+
+The assistant can speak with a real person's voice, such as yours or a colleague's, but only if that person agrees in their own voice:
+
+1. Under **Workspace > Calls > Voice clones**, enter a name for the voice, the speaker's full name and, if it isn't you, their email. Press **Ask for consent**.
+2. The speaker opens the link, ticks the box and records themselves reading a short consent statement with two code words, then a short passage. It takes about half a minute. Recordings can't be uploaded, only made on that page.
+3. DocChat checks that the statement was said. The voice then shows **Ready**: press **Preview**, then **Use on calls**.
+
+The speaker can withdraw on the same link at any time, which deletes the recording. Calls in a cloned voice still say they are a virtual assistant. Voice clones need the free voice clone service on the server (see [Self-hosting](/docs/self-hosting)), and speak one language per server: English, Spanish, French or German.
 
 ## Calling people
 

@@ -2,7 +2,9 @@
 
 namespace App\Services\Calls;
 
+use App\Models\VoiceClone;
 use App\Models\Workspace;
+use App\Services\Voice\PocketTtsVoice;
 use Illuminate\Validation\Rule;
 
 /**
@@ -27,13 +29,16 @@ final class VoiceProfile
         'speed' => 1.0,
         // 0.8 to 1.2 times normal pitch.
         'pitch' => 1.0,
-        // Browser calls: the visitor's own browser voice, or self-hosted Kokoro.
+        // Browser calls: the visitor's own browser voice, self-hosted Kokoro,
+        // or a voice clone (made with the speaker's recorded consent).
         'web_engine' => 'browser',
         // A browser voice name to prefer, when the visitor's device has it.
         'browser_voice' => null,
         'kokoro_voice' => 'af_heart',
-        // Phone calls: a key of PHONE_VOICES, or "kokoro".
+        // Phone calls: a key of PHONE_VOICES, "kokoro" or "clone".
         'phone_voice' => 'basic',
+        // The workspace's voice clone used by the "clone" engine.
+        'clone_id' => null,
         'interruptions' => true,
         'pace' => 'natural',
         'fillers' => true,
@@ -186,10 +191,11 @@ final class VoiceProfile
             'age' => ['required', Rule::in(array_keys(self::AGES))],
             'speed' => ['required', 'numeric', 'between:0.8,1.3'],
             'pitch' => ['required', 'numeric', 'between:0.8,1.2'],
-            'web_engine' => ['required', Rule::in(['browser', 'kokoro'])],
+            'web_engine' => ['required', Rule::in(['browser', 'kokoro', 'clone'])],
             'browser_voice' => ['nullable', 'string', 'max:120'],
             'kokoro_voice' => ['required', Rule::in(array_keys(self::KOKORO_VOICES))],
-            'phone_voice' => ['required', Rule::in([...array_keys(self::PHONE_VOICES), 'kokoro'])],
+            'phone_voice' => ['required', Rule::in([...array_keys(self::PHONE_VOICES), 'kokoro', 'clone'])],
+            'clone_id' => ['nullable', 'integer'],
             'interruptions' => ['boolean'],
             'pace' => ['required', Rule::in(array_keys(self::PACES))],
             'fillers' => ['boolean'],
@@ -217,9 +223,10 @@ final class VoiceProfile
         $profile['background'] = $pick('background', self::BACKGROUNDS);
         $profile['voicemail'] = $pick('voicemail', self::VOICEMAIL);
         $profile['kokoro_voice'] = $pick('kokoro_voice', self::KOKORO_VOICES);
-        $profile['web_engine'] = in_array($profile['web_engine'], ['browser', 'kokoro'], true) ? $profile['web_engine'] : 'browser';
+        $profile['web_engine'] = in_array($profile['web_engine'], ['browser', 'kokoro', 'clone'], true) ? $profile['web_engine'] : 'browser';
         $phone = (string) $profile['phone_voice'];
-        $profile['phone_voice'] = $phone === 'kokoro' || array_key_exists($phone, self::PHONE_VOICES) ? $phone : 'basic';
+        $profile['phone_voice'] = in_array($phone, ['kokoro', 'clone'], true) || array_key_exists($phone, self::PHONE_VOICES) ? $phone : 'basic';
+        $profile['clone_id'] = is_numeric($profile['clone_id']) && (int) $profile['clone_id'] > 0 ? (int) $profile['clone_id'] : null;
         $profile['speed'] = round(min(1.3, max(0.8, (float) $profile['speed'])), 2);
         $profile['pitch'] = round(min(1.2, max(0.8, (float) $profile['pitch'])), 2);
 
@@ -231,6 +238,26 @@ final class VoiceProfile
         $profile['voicemail_message'] = filled($profile['voicemail_message']) ? trim((string) $profile['voicemail_message']) : null;
 
         return $profile;
+    }
+
+    /**
+     * The workspace's chosen voice clone, when it is ready and the clone
+     * server speaks the call's language. Null means: use the other voices.
+     *
+     * @param  array<string, mixed>  $profile
+     */
+    public static function voiceClone(Workspace $workspace, array $profile, ?string $detected = null): ?VoiceClone
+    {
+        if ($profile['clone_id'] === null || ! PocketTtsVoice::configured()) {
+            return null;
+        }
+
+        $clone = VoiceClone::query()->withoutGlobalScopes()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey((int) $profile['clone_id'])
+            ->first();
+
+        return $clone !== null && PocketTtsVoice::canSpeak($clone, self::phraseLanguage($profile, $detected)) ? $clone : null;
     }
 
     public static function kokoroAvailable(): bool
@@ -337,21 +364,25 @@ final class VoiceProfile
      * Twilio voice and language for the phone line.
      *
      * @param  array<string, mixed>  $profile
-     * @return array{voice: string, language: string, ssml: bool, kokoro: bool}
+     * @return array{voice: string, language: string, ssml: bool, kokoro: bool, clone: bool}
      */
-    public static function phone(array $profile): array
+    public static function phone(array $profile, ?VoiceClone $clone = null): array
     {
         $language = (string) $profile['language'];
         $choice = (string) $profile['phone_voice'];
 
+        if ($choice === 'clone' && $clone !== null) {
+            return ['voice' => '', 'language' => $language, 'ssml' => false, 'kokoro' => false, 'clone' => true];
+        }
+
         if ($choice === 'kokoro' && self::kokoroAvailable() && self::kokoroVoice($profile) !== null) {
-            return ['voice' => '', 'language' => $language, 'ssml' => false, 'kokoro' => true];
+            return ['voice' => '', 'language' => $language, 'ssml' => false, 'kokoro' => true, 'clone' => false];
         }
 
         $voice = self::PHONE_VOICES[$choice] ?? self::PHONE_VOICES['basic'];
 
         if ($choice !== 'basic' && $choice !== 'kokoro' && in_array($language, $voice['languages'], true)) {
-            return ['voice' => $choice, 'language' => $language, 'ssml' => true, 'kokoro' => false];
+            return ['voice' => $choice, 'language' => $language, 'ssml' => true, 'kokoro' => false, 'clone' => false];
         }
 
         // The basic voice only speaks a few languages; others fall back to US English.
@@ -363,6 +394,7 @@ final class VoiceProfile
             'language' => $language,
             'ssml' => false,
             'kokoro' => false,
+            'clone' => false,
         ];
     }
 
@@ -413,14 +445,15 @@ final class VoiceProfile
      * @param  array<string, mixed>  $profile
      * @return array<string, mixed>
      */
-    public static function client(array $profile, ?string $detected = null): array
+    public static function client(array $profile, ?string $detected = null, ?VoiceClone $clone = null): array
     {
         $kokoro = $profile['web_engine'] === 'kokoro' && self::kokoroAvailable() && self::kokoroVoice($profile, $detected) !== null;
+        $cloned = $profile['web_engine'] === 'clone' && $clone !== null;
         $pace = self::PACES[$profile['pace']];
         $lang = self::phraseLanguage($profile, $detected);
 
         return [
-            'engine' => $kokoro ? 'kokoro' : 'browser',
+            'engine' => $cloned ? 'clone' : ($kokoro ? 'kokoro' : 'browser'),
             'lang' => self::speechLang($profile, $detected),
             'gender' => $profile['gender'],
             'age' => $profile['age'],

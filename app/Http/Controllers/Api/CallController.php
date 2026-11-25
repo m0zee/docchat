@@ -64,7 +64,7 @@ class CallController extends Controller
             'token' => $token,
             'greeting' => $greeting,
             'max_seconds' => Call::maxSeconds(),
-            'voice' => VoiceProfile::client(VoiceProfile::for($workspace)),
+            'voice' => CallSessionController::clientVoice($call, VoiceProfile::for($workspace)),
         ]], 201);
     }
 }

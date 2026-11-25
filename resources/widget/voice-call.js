@@ -313,7 +313,7 @@
           state.spokeAt = Date.now();
           resolve({ interrupted: !!interrupted });
         }
-        var cancel = (settings.engine === 'kokoro' ? speakKokoro : speakBrowser)(text, finishSpeak);
+        var cancel = (settings.engine === 'kokoro' || settings.engine === 'clone' ? speakKokoro : speakBrowser)(text, finishSpeak);
         state.cancelSpeech = function () { cancel(); finishSpeak(false); };
         if (interruptible !== false) unwatch = watchBargeIn(function () { cancel(); finishSpeak(true); });
       });

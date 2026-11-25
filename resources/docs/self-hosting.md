@@ -33,6 +33,7 @@ All settings live in `.env`, explained in `.env.example`. A few you may want:
 | `DOCCHAT_DEVICE_AI` | Allow answers written in the browser (default on) |
 | `DOCCHAT_RAG_SIMILARITY_THRESHOLD` | How close a passage must be to count (0 to 1) |
 | `DOCCHAT_KOKORO_URL` | The self-hosted natural voice for calls, for example `http://kokoro:8880` |
+| `DOCCHAT_CLONE_URL`, `DOCCHAT_CLONE_LANGUAGE`, `HF_TOKEN` | Voice clones, for example `http://voice-clone:8000` and `en` |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | The phone line, on a free Twilio trial |
 | `DOCCHAT_CALLING_HOURS` | When outbound phone calls may start (default `09:00-20:00`) |
 
@@ -45,5 +46,13 @@ docker compose --profile voice up -d kokoro
 ```
 
 Then set `DOCCHAT_KOKORO_URL=http://kokoro:8880` in `.env` and pick **Self-hosted natural voice** under **Workspace > Calls**. The full setup, including the phone line, is in `docs/calls.md` in the repository.
+
+For voice clones, run the open Kyutai Pocket TTS model (free, on the CPU, about 2 GB of memory). Its voice cloning files need a free Hugging Face account: accept the model's terms, make a read token and put it in `.env` as `HF_TOKEN`. Then:
+
+```
+docker compose --profile clone up -d voice-clone
+```
+
+and set `DOCCHAT_CLONE_URL=http://voice-clone:8000` and `DOCCHAT_CLONE_LANGUAGE` (`en`, `es`, `fr` or `de`).
 
 Keep `APP_KEY` safe and unchanged: it encrypts workspaces' own AI keys. If you must change it, put the old one in `APP_PREVIOUS_KEYS`.

@@ -70,7 +70,7 @@
         <div class="mt-8 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
             @foreach ([
                 ['icon' => 'globe-alt', 'title' => __('Website widget'), 'text' => __('One script tag adds a chat bubble to your site for visitors, with sources, saved history and a handoff email when the documents have no answer.')],
-                ['icon' => 'phone', 'title' => __('Voice calls that sound natural'), 'text' => __('Visitors call from your site and people ring your Twilio number. Pick the name, personality, voice, accent and language; callers can interrupt, and it answers in their language.')],
+                ['icon' => 'phone', 'title' => __('Voice calls that sound natural'), 'text' => __('Visitors call from your site and people ring your Twilio number. Pick the name, personality, voice, accent and language, or clone a real voice with that person\'s recorded consent; callers can interrupt, and it answers in their language.')],
                 ['icon' => 'device-phone-mobile', 'title' => __('Telegram, WhatsApp and Discord'), 'text' => __('Link a chat with a one-time code and it answers from your workspace. Send a file to the bot to add it.')],
                 ['icon' => 'users', 'title' => __('Workspaces and teams'), 'text' => __('Invite people by email link. Owners manage keys, the widget, chat apps, webhooks and usage.')],
                 ['icon' => 'key', 'title' => __('Bring your own AI key'), 'text' => __('Paste your own free Groq or Gemini key and your answers run on your own quota. Keys are encrypted and never shown again.')],

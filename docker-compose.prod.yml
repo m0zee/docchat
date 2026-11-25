@@ -125,6 +125,20 @@ services:
     profiles: ["voice"]
     restart: unless-stopped
 
+  # Voice clones (Kyutai Pocket TTS, free, CPU). Off by default:
+  # docker compose --profile clone up -d voice-clone, then set
+  # DOCCHAT_CLONE_URL=http://voice-clone:8000. Needs HF_TOKEN from a free
+  # Hugging Face account that accepted the model's terms, and about 2 GB of RAM.
+  voice-clone:
+    build: ./docker/voice-clone
+    profiles: ["clone"]
+    restart: unless-stopped
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      DOCCHAT_CLONE_LANGUAGE: ${DOCCHAT_CLONE_LANGUAGE:-en}
+    volumes:
+      - voice_clone_models:/models
+
   caddy:
     image: caddy:2.11.9
     ports:
@@ -143,6 +157,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  voice_clone_models:
   pgdata:
   storage:
   caddy_data:

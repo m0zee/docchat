@@ -21,7 +21,7 @@ Artisan::command('docchat:prune-voice-cache {--days=7}', function () {
     $before = now()->subDays(max(0, (int) $this->option('days')))->getTimestamp();
     $deleted = 0;
 
-    foreach ($disk->files('voice-cache') as $file) {
+    foreach ($disk->allFiles('voice-cache') as $file) {
         if ($disk->lastModified($file) < $before) {
             $disk->delete($file);
             $deleted++;
@@ -29,6 +29,6 @@ Artisan::command('docchat:prune-voice-cache {--days=7}', function () {
     }
 
     $this->info('Deleted '.$deleted.' cached voice clips.');
-})->purpose('Delete cached Kokoro voice clips older than --days');
+})->purpose('Delete cached Kokoro and voice clone clips older than --days');
 
 Schedule::command('docchat:prune-voice-cache')->daily();

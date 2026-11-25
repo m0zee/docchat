@@ -2,7 +2,7 @@
 
 **Chat with your documents, and get answers you can check.**
 
-DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask questions about them in a chat. Answers come only from your files, stream in word by word, and cite the exact document and page behind each fact, so you can click a source and read the passage yourself. When the answer isn't in your documents, DocChat says so instead of guessing. It's built like a small production product: workspaces for each client with members and invites, a website widget for guests, Telegram, WhatsApp and Discord bots that share one answer engine, a calling agent for website and phone calls with natural voices in seven languages, a versioned public API with keys, streaming and signed webhooks, n8n automations for Google Drive and nightly evals, an answer cache that saves tokens on repeated questions, usage tracking per channel, and 440+ tests that run without any API key.
+DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask questions about them in a chat. Answers come only from your files, stream in word by word, and cite the exact document and page behind each fact, so you can click a source and read the passage yourself. When the answer isn't in your documents, DocChat says so instead of guessing. It's built like a small production product: workspaces for each client with members and invites, a website widget for guests, Telegram, WhatsApp and Discord bots that share one answer engine, a calling agent for website and phone calls with natural voices in seven languages and consent-based voice clones, a versioned public API with keys, streaming and signed webhooks, n8n automations for Google Drive and nightly evals, an answer cache that saves tokens on repeated questions, usage tracking per channel, and 450+ tests that run without any API key.
 
 > This is a portfolio project running on free tiers for testing. Upload test documents only: on the free Gemini tier, Google may use what you send to improve its products.
 
@@ -35,6 +35,7 @@ DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask que
 - **WhatsApp bot** ([setup](n8n/README.md#whatsapp-bot)) on Meta's Cloud API through n8n, linked the same way, replying only inside WhatsApp's 24-hour window.
 - **Calling agent** ([setup](docs/calls.md)): a voice agent that answers from the workspace's documents. Website visitors press **Call** in the widget and talk in the browser (Groq Whisper hears them, a natural voice reads the answer). Owners call contacts who agreed to it, with a call link or a real phone call through a free Twilio trial, and people can ring the workspace's Twilio number. Every call says it is a virtual assistant, keeps a transcript and a log under **Workspace > Calls**, and "stop calling" opts the person out for good.
 - **Natural-sounding voice** (**Workspace > Calls > Voice and personality**): the assistant's name and personality, language and accent (English in four accents, Spanish, French, German, Hindi, Urdu, Arabic), answering in the caller's language (Whisper detects it), female or male voice, age, speed and pitch, with previews. Callers can interrupt; the agent waits a natural moment, says a short filler and plays soft hold music while a longer answer is written, and can add a quiet background sound. Voices: the best one in the visitor's browser, the self-hosted open Kokoro voice (free, also on the phone line), or Twilio's free basic voice and paid Amazon and Google voices, labeled as such. Outbound phone calls can detect voicemail and hang up or leave a short message.
+- **Voice clones with consent** (**Workspace > Calls > Voice clones**): give the assistant a real person's voice, free and self-hosted (Kyutai Pocket TTS). The speaker opens a consent link and records a statement with their name and two random code words; Whisper must hear them before the voice is used, recordings can't be uploaded, and the speaker can withdraw at any time, which deletes the recording and every clip. Calls in a cloned voice still say they are a virtual assistant.
 - **Voice notes** in Telegram and WhatsApp are transcribed and answered, and can be answered with audio too.
 - **Bring your own key** (**Workspace > AI keys**): an owner pastes their own free Groq or Gemini key, and the workspace's answers use it instead of the app's keys. A Gemini key also embeds the workspace's documents and questions (same model, so vectors stay compatible either way). Keys are checked with a free "list models" call before saving, encrypted with `APP_KEY`, never shown again, and flagged on the page when the provider rejects them.
 - **AI in the browser** (optional): the server still searches the documents, but the answer is written on the asker's device, so it costs no model tokens. The chat page offers Chrome's built-in AI (Prompt API with Gemini Nano, Chrome 148+ on desktop) and WebLLM (a small open model on WebGPU, loaded from a CDN only when picked) and hides the choice when the browser supports neither. The widget can use Chrome's built-in AI for visitors who already have the model, when the owner turns it on, and falls back to the server otherwise.
@@ -194,7 +195,7 @@ n8n runs next to DocChat in the same Docker stack, with its own database, and ta
 - **Widget keys** (`dc_pub_`) are public by design. They can only ask, only from the websites the owner lists (checked on the server against `Origin`), only in guest conversations named by a random visitor id, and with a rate limit per visitor.
 - **Service keys** (`dc_svc_`) for the shared bots belong to no workspace. They act only in the workspace of a chat that an owner linked with a one-time code (hashed, 15 minutes, single use), named in the `X-DocChat-Link` header.
 - **Discord** requests are verified with Ed25519 over the timestamp and raw body, and anything older than 5 minutes is refused.
-- **Calls.** A browser call's `dc_call_` token works for one call only, stored hashed, until it ends or expires. Twilio webhooks are checked with Twilio's `X-Twilio-Signature` and the call's own `CallSid`; Kokoro clips Twilio plays are behind DocChat's own HMAC. The voice endpoint only speaks the call's own lines, so a call token can't be used as free text to speech. Outbound calls only go to contacts with recorded consent, never after an opt-out, and phone calls only inside the calling hours. Every greeting, outbound opening and voicemail says it is a virtual assistant; a custom greeting that doesn't gets it added.
+- **Calls.** A browser call's `dc_call_` token works for one call only, stored hashed, until it ends or expires. Twilio webhooks are checked with Twilio's `X-Twilio-Signature` and the call's own `CallSid`; Kokoro clips Twilio plays are behind DocChat's own HMAC. The voice endpoint only speaks the call's own lines, so a call token can't be used as free text to speech. Outbound calls only go to contacts with recorded consent, never after an opt-out, and phone calls only inside the calling hours. Every greeting, outbound opening and voicemail says it is a virtual assistant; a custom greeting that doesn't gets it added. A voice clone needs the speaker's own recorded consent on a link that only stores its hash: the statement names them and the workspace and carries two random code words, so an old recording can't be reused; consent records the time, IP and browser, and withdrawing deletes the audio.
 - **Own AI keys** are encrypted at rest with `APP_KEY` (rotate it with `APP_PREVIOUS_KEYS`, or the keys can't be read), hidden from serialization, and only owners can see or change them. Only the last four characters are shown.
 - **On-device answers** are text from the browser, so they are treated as untrusted: they need a single-use, 10-minute token tied to the conversation, are shown only in that conversation, and never enter the shared answer cache. Citations are still mapped on the server from the chunks it retrieved.
 - **Webhooks** carry `X-DocChat-Signature: sha256=<HMAC of the raw body>` and `X-DocChat-Timestamp`. Receivers should verify the HMAC and reject anything older than 5 minutes. Signing secrets are encrypted at rest.
@@ -209,6 +210,7 @@ DocChat has no paid plan (see `/pricing`). Everything runs on free tiers; the on
 | Search (embeddings) | Google Gemini | Free tier rate limits | Never on free keys |
 | Speech to text | Groq Whisper | 20 a minute, 2,000 a day; 300 a day per workspace | Never |
 | Website call voice | The browser's own voices, or self-hosted Kokoro | Kokoro needs about 2 GB of RAM | Never |
+| Voice clones | Self-hosted Kyutai Pocket TTS | About 2 GB of RAM; a free Hugging Face account for the model | Never |
 | Voice replies in bots | Kokoro, or Groq Orpheus | Orpheus: 100 a day, needs ffmpeg | Never |
 | Phone line | Twilio trial, no card | 75 minutes over 30 days, verified numbers only, 10 minutes a call | After the trial, Twilio bills minutes and the number |
 | Phone voices | Twilio basic voice | | Amazon Polly and Google voices use trial credit, then a per-100-characters charge |
@@ -276,7 +278,7 @@ A short demo script for screen recordings is in [`docs/demo-script.md`](docs/dem
 
 ## Stack
 
-Laravel 13, PHP 8.4, Livewire 4 with Flux, Tailwind 4, PostgreSQL 16 with pgvector 0.8, `smalot/pdfparser`, Pest 5, Docker (serversideup/php), Caddy. Embeddings: Google Gemini. Chat: Groq or OpenRouter. Voice: Groq Whisper, browser `speechSynthesis`, Kokoro-FastAPI (optional), Twilio.
+Laravel 13, PHP 8.4, Livewire 4 with Flux, Tailwind 4, PostgreSQL 16 with pgvector 0.8, `smalot/pdfparser`, Pest 5, Docker (serversideup/php), Caddy. Embeddings: Google Gemini. Chat: Groq or OpenRouter. Voice: Groq Whisper, browser `speechSynthesis`, Kokoro-FastAPI (optional), Kyutai Pocket TTS (optional, voice clones), Twilio.
 
 ## Roadmap
 
@@ -298,6 +300,10 @@ Laravel 13, PHP 8.4, Livewire 4 with Flux, Tailwind 4, PostgreSQL 16 with pgvect
 | Voice and personality | Pricing |
 |---|---|
 | ![Voice settings with previews](docs/screenshots/voice-settings.png) | ![Pricing page with voice costs](docs/screenshots/pricing-voice.png) |
+
+| Voice clone consent page | Voice clones on Workspace > Calls |
+|---|---|
+| ![The speaker reads a consent statement with code words and records it](docs/screenshots/voice-consent.png) | ![Voice clones with their consent status](docs/screenshots/voice-clones.png) |
 
 ## License
 

@@ -64,6 +64,7 @@ calling" are understood in those languages too.
 |---|---|---|
 | Browser voices | Browser calls | Free. Edge and Chrome have very natural "Online (Natural)" and Google voices; quality depends on the visitor's device |
 | Kokoro (self-hosted) | Browser calls, phone calls (`<Play>`), bot voice replies | Free: an open model (Apache-2.0) on your own server, no limits. About 2 GB of RAM; replies start after about a second on the Oracle free VM |
+| Voice clone (Kyutai Pocket TTS, self-hosted) | Browser calls, phone calls (`<Play>`) | Free: open model (code MIT, weights CC-BY-4.0) on your own CPU. Needs a free Hugging Face account and about 2 GB of RAM |
 | Twilio basic voice | Phone calls | Free |
 | Amazon Polly and Google voices on Twilio | Phone calls | Use the trial credit; after the trial Twilio charges per 100 characters spoken. Generative voices (Google Chirp 3 HD, Amazon Generative) cost the most |
 | Twilio voicemail detection | Outbound phone calls | Uses trial credit; a small charge per call after it. Off by default |
@@ -87,6 +88,49 @@ Clips are cached on the server's disk (`storage/app/private/voice-cache`), so re
 are instant; `docchat:prune-voice-cache` (daily) deletes clips older than a week. The
 browser can only have the call's own lines spoken (`POST /api/v1/call/speech` checks them),
 so a call token can't be used as a free text-to-speech service.
+
+### Voice clones (with the speaker's consent)
+
+A workspace can give its assistant a real person's voice, such as the owner's or a team
+member's. It is built so a voice can only be copied with that person's clear, recorded
+consent:
+
+1. On **Workspace > Calls > Voice clones**, an owner enters the voice's name, the speaker's
+   full name, an optional email and the language, and presses **Ask for consent**. DocChat
+   makes a consent link (`/voice-consent/<token>`, shown once, valid for 7 days) and can
+   email it to the speaker. Owners open it themselves to record their own voice.
+2. The page shows a statement with the speaker's name, the workspace and two random code
+   words, for example: "I, Sara Khan, agree that Harbor Library may create an AI copy of my
+   voice for its virtual assistant. My code words are silver rocket." Then a short passage.
+3. The speaker ticks "this is my own voice and I agree" and reads both aloud in one take
+   (8 to 45 seconds), recorded in the browser as a 24 kHz WAV. There is no file upload, so
+   nobody can clone a voice from someone else's recording.
+4. Whisper transcribes it. It must contain both code words, the word for "agree" and the
+   speaker's name (one wrong letter is allowed). Five failed tries end the link. On success
+   the recording is kept on the private disk with when, from which IP and browser the
+   speaker agreed, and the voice is **Ready**.
+5. The same link lets the speaker **withdraw** at any time. That deletes the recording and
+   every clip made from it, and calls go back to the normal voice. Deleting a clone on the
+   Calls page does the same.
+
+Calls in a cloned voice still open with "this is Ava, Harbor's virtual assistant". A
+workspace can have 3 clones (`DOCCHAT_CLONE_PER_WORKSPACE`).
+
+Set it up:
+
+1. Create a free Hugging Face account, open the Kyutai Pocket TTS model page, accept its
+   terms (they also forbid cloning without consent) and make a read token.
+2. In `.env`: `HF_TOKEN=...`, `DOCCHAT_CLONE_URL=http://voice-clone:8000` and
+   `DOCCHAT_CLONE_LANGUAGE` (`en`, `es`, `fr` or `de`; one language per server).
+3. `docker compose --profile clone up -d voice-clone` builds `docker/voice-clone/Dockerfile`
+   (`pip install pocket-tts==4.0.1` with CPU-only PyTorch) and runs `pocket-tts serve`.
+4. On **Workspace > Calls**, press **Use on calls** next to a ready voice, or choose **Voice
+   clone** as the website or phone voice.
+
+DocChat calls `POST /tts` with the text and the consent recording as `voice_wav`, and caches
+the WAV per clone (`voice-cache/clone-<id>`). A clone is used only when the call is in the
+clone server's language; other calls use the normal voice. If the server is down, calls fall
+back to the normal voice too.
 
 ## Rules the agent follows
 
@@ -178,9 +222,10 @@ Audio answers are off by default. To turn them on:
 | `POST /api/v1/calls` | widget `dc_pub_` key (from listed sites) or `dc_live_` key | Starts a browser call. Returns the call token, the greeting and the `voice` settings. |
 | `POST /api/v1/call/answer` | `Bearer dc_call_...` | Answers a call link or test call. Returns the opening line and `voice`. |
 | `POST /api/v1/call/turns` | `Bearer dc_call_...` | Multipart `audio` or `text`. Returns `heard`, `reply`, `citations`, `ended`, and `lang`, `fillers` and `engine` (they follow the caller's language). |
-| `POST /api/v1/call/speech` | `Bearer dc_call_...` | `text` (one of the call's own lines) in, Kokoro MP3 out. Also works for two minutes after the call ends, for the goodbye. |
+| `POST /api/v1/call/speech` | `Bearer dc_call_...` | `text` (one of the call's own lines) in, Kokoro MP3 (or voice clone WAV) out. Also works for two minutes after the call ends, for the goodbye. |
 | `POST /api/v1/call/end` | `Bearer dc_call_...` | Hangs up. |
 | `POST /api/v1/voice/ask` | `dc_live_` or service key | Voice note in, answer out (same fields as `/ask`, plus `transcript` and `spoken`). |
 | `POST /api/v1/voice/speak` | `dc_live_` or service key | Text in, MP3 out, when voice replies are on. |
 | `POST /twilio/voice/*` | Twilio signature | Twilio's webhooks: `inbound`, `calls/{id}/answer` (with `AnsweredBy` for voicemail), `calls/{id}/gather`, `calls/{id}/reply/{turn}` (waiting for an answer), `calls/{id}/status`. |
-| `GET /twilio/voice/hold.wav`, `GET /twilio/voice/audio/{clip}?sig=...` | none, or DocChat's own signature | The hold sound, and Kokoro clips for `<Play>`. |
+| `GET /twilio/voice/hold.wav`, `GET /twilio/voice/audio/{clip}?sig=...` | none, or DocChat's own signature | The hold sound, and Kokoro and voice clone clips for `<Play>`. |
+| `GET /voice-consent/{token}`, `POST .../recording`, `POST .../withdraw` | the consent link's token | The speaker's consent page: record the statement (WAV), or withdraw. |

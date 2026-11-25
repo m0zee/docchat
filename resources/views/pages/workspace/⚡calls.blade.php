@@ -6,9 +6,12 @@ use App\Enums\CallTransport;
 use App\Enums\MessageRole;
 use App\Jobs\PlaceTwilioCallJob;
 use App\Mail\CallLinkMail;
+use App\Mail\VoiceConsentMail;
 use App\Models\Call;
 use App\Models\CallContact;
 use App\Models\Message;
+use App\Models\VoiceClone;
+use App\Enums\VoiceCloneStatus;
 use App\Models\Workspace;
 use App\Services\Calls\CallingHours;
 use App\Services\Calls\CallSettings;
@@ -16,6 +19,8 @@ use App\Services\Calls\Phrases;
 use App\Services\Calls\VoiceProfile;
 use App\Exceptions\SpeechException;
 use App\Services\Voice\KokoroTextToSpeech;
+use App\Services\Voice\PocketTtsVoice;
+use App\Services\Voice\VoiceConsent;
 use App\Support\CurrentWorkspace;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
@@ -43,6 +48,20 @@ new #[Title('Calls')] class extends Component {
      * @var array<string, mixed>
      */
     public array $voice = [];
+
+    // New voice clone
+    public string $cloneName = '';
+
+    public string $cloneSpeaker = '';
+
+    public string $cloneEmail = '';
+
+    public string $cloneLanguage = 'en';
+
+    public bool $cloneSendEmail = true;
+
+    /** The consent link just created, shown once. */
+    public ?string $cloneLink = null;
 
     // New contact
     public string $contactName = '';
@@ -93,6 +112,7 @@ new #[Title('Calls')] class extends Component {
         $profile['pitch'] = number_format((float) $profile['pitch'], 2);
         $profile['browser_voice'] = (string) $profile['browser_voice'];
         $profile['voicemail_message'] = (string) $profile['voicemail_message'];
+        $profile['clone_id'] = $profile['clone_id'] === null ? '' : (string) $profile['clone_id'];
 
         return $profile;
     }
@@ -110,7 +130,15 @@ new #[Title('Calls')] class extends Component {
             return;
         }
 
-        VoiceProfile::save($this->workspace, $this->voice);
+        $usesClone = $this->voice['web_engine'] === 'clone' || $this->voice['phone_voice'] === 'clone';
+
+        if ($usesClone && ! $this->readyClones->contains('id', (int) $this->voice['clone_id'])) {
+            $this->addError('voice.clone_id', __('Pick a voice clone that is ready, or choose another voice.'));
+
+            return;
+        }
+
+        VoiceProfile::save($this->workspace, [...$this->voice, 'clone_id' => filled($this->voice['clone_id']) ? (int) $this->voice['clone_id'] : null]);
         unset($this->workspace);
         $this->voice = $this->voiceForm(VoiceProfile::for($this->workspace));
         Flux::toast(variant: 'success', text: __('Voice settings saved.'));
@@ -187,6 +215,10 @@ new #[Title('Calls')] class extends Component {
             $options['kokoro'] = __('Self-hosted natural voice (free)');
         }
 
+        if ($this->readyClones->isNotEmpty() && VoiceProfile::LANGUAGES[$language]['phrases'] === PocketTtsVoice::language()) {
+            $options['clone'] = __('Voice clone (free, self-hosted)');
+        }
+
         return $options;
     }
 
@@ -221,6 +253,171 @@ new #[Title('Calls')] class extends Component {
         }
 
         $this->voice['browser_voice'] = '';
+    }
+
+    public function createClone(): void
+    {
+        Gate::authorize('manage', $this->workspace);
+
+        $this->validate([
+            'cloneName' => ['required', 'string', 'max:60'],
+            'cloneSpeaker' => ['required', 'string', 'max:80', 'regex:/^[\pL\pM][\pL\pM\s\'.-]*$/u'],
+            'cloneEmail' => ['nullable', 'email', 'max:255'],
+            'cloneLanguage' => ['required', Rule::in(array_keys(VoiceConsent::LANGUAGES))],
+        ], [], ['cloneName' => __('voice name'), 'cloneSpeaker' => __('speaker\'s name'), 'cloneEmail' => __('email')]);
+
+        $limit = max(1, (int) config('docchat.voice.clone.per_workspace', 3));
+        $active = VoiceClone::query()->inWorkspace($this->workspace)->whereIn('status', [VoiceCloneStatus::Waiting, VoiceCloneStatus::Ready])->count();
+
+        if ($active >= $limit) {
+            $this->addError('cloneName', __('A workspace can have :count voice clones. Delete one first.', ['count' => $limit]));
+
+            return;
+        }
+
+        $token = VoiceClone::newToken();
+        $words = VoiceConsent::codeWords($this->cloneLanguage);
+        $speaker = trim($this->cloneSpeaker);
+
+        $clone = VoiceClone::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'created_by_user_id' => Auth::id(),
+            'name' => trim($this->cloneName),
+            'speaker_name' => $speaker,
+            'speaker_email' => trim($this->cloneEmail) ?: null,
+            'language' => $this->cloneLanguage,
+            'status' => VoiceCloneStatus::Waiting,
+            'token_hash' => VoiceClone::hash($token),
+            'code_words' => $words,
+            'statement' => VoiceConsent::statement($this->cloneLanguage, $speaker, $this->workspace->name, $words),
+            'expires_at' => now()->addDays(max(1, (int) config('docchat.voice.clone.link_valid_days', 7))),
+        ]);
+
+        $this->cloneLink = rtrim((string) config('app.url'), '/').'/voice-consent/'.$token;
+
+        if ($this->cloneSendEmail && $clone->speaker_email !== null) {
+            Mail::to($clone->speaker_email)->send(new VoiceConsentMail($clone->load('workspace'), $this->cloneLink));
+            Flux::toast(variant: 'success', text: __('Consent link emailed to :email.', ['email' => $clone->speaker_email]));
+        } else {
+            Flux::toast(variant: 'success', text: __('Consent link created.'));
+        }
+
+        $this->reset('cloneName', 'cloneSpeaker', 'cloneEmail');
+        unset($this->clones, $this->readyClones);
+    }
+
+    /**
+     * A fresh consent link (the old one stops working) with new code words.
+     */
+    public function renewCloneLink(int $id): void
+    {
+        Gate::authorize('manage', $this->workspace);
+
+        $clone = VoiceClone::query()->inWorkspace($this->workspace)->find($id);
+
+        if ($clone === null || ! in_array($clone->status, [VoiceCloneStatus::Waiting, VoiceCloneStatus::Failed], true)) {
+            return;
+        }
+
+        $token = VoiceClone::newToken();
+        $words = VoiceConsent::codeWords($clone->language);
+
+        $clone->forceFill([
+            'token_hash' => VoiceClone::hash($token),
+            'code_words' => $words,
+            'statement' => VoiceConsent::statement($clone->language, $clone->speaker_name, $this->workspace->name, $words),
+            'status' => VoiceCloneStatus::Waiting,
+            'attempts' => 0,
+            'failure' => null,
+            'expires_at' => now()->addDays(max(1, (int) config('docchat.voice.clone.link_valid_days', 7))),
+        ])->save();
+
+        $this->cloneLink = rtrim((string) config('app.url'), '/').'/voice-consent/'.$token;
+        unset($this->clones);
+    }
+
+    public function useClone(int $id): void
+    {
+        Gate::authorize('manage', $this->workspace);
+
+        $clone = $this->readyClones->firstWhere('id', $id);
+
+        if ($clone === null) {
+            return;
+        }
+
+        $values = ['clone_id' => $clone->id, 'web_engine' => 'clone'];
+
+        if (VoiceProfile::LANGUAGES[VoiceProfile::for($this->workspace)['language']]['phrases'] === PocketTtsVoice::language()) {
+            $values['phone_voice'] = 'clone';
+        }
+
+        VoiceProfile::save($this->workspace, $values);
+        unset($this->workspace, $this->phoneVoices);
+        $this->voice = $this->voiceForm(VoiceProfile::for($this->workspace));
+        Flux::toast(variant: 'success', text: __('Calls now use the voice ":name".', ['name' => $clone->name]));
+    }
+
+    public function deleteClone(int $id): void
+    {
+        Gate::authorize('manage', $this->workspace);
+
+        VoiceClone::query()->inWorkspace($this->workspace)->find($id)?->delete();
+
+        if ((int) VoiceProfile::for($this->workspace)['clone_id'] === $id) {
+            VoiceProfile::save($this->workspace, ['clone_id' => null, 'web_engine' => 'browser', 'phone_voice' => 'basic']);
+            unset($this->workspace);
+            $this->voice = $this->voiceForm(VoiceProfile::for($this->workspace));
+        }
+
+        unset($this->clones, $this->readyClones, $this->phoneVoices);
+        Flux::toast(text: __('Voice clone deleted, with its recording.'));
+    }
+
+    /**
+     * Speak the sample line in a clone's voice. Returns a data URL.
+     */
+    public function previewClone(int $id): ?string
+    {
+        Gate::authorize('manage', $this->workspace);
+
+        $clone = $this->readyClones->firstWhere('id', $id);
+
+        if ($clone === null || ! PocketTtsVoice::canSpeak($clone)) {
+            Flux::toast(variant: 'warning', text: __('The voice clone server is not set up (DOCCHAT_CLONE_URL), or speaks another language.'));
+
+            return null;
+        }
+
+        $name = trim((string) ($this->voice['assistant_name'] ?? '')) ?: VoiceProfile::DEFAULTS['assistant_name'];
+
+        try {
+            $audio = app(PocketTtsVoice::class)->speak($clone, Phrases::get($clone->language, 'greeting', ['name' => $name, 'workspace' => $this->workspace->name]));
+        } catch (SpeechException $exception) {
+            Flux::toast(variant: 'danger', text: $exception->getMessage());
+
+            return null;
+        }
+
+        return 'data:audio/wav;base64,'.base64_encode($audio);
+    }
+
+    /**
+     * @return Collection<int, VoiceClone>
+     */
+    #[Computed]
+    public function clones(): Collection
+    {
+        return VoiceClone::query()->inWorkspace($this->workspace)->latest('id')->get();
+    }
+
+    /**
+     * @return Collection<int, VoiceClone>
+     */
+    #[Computed]
+    public function readyClones(): Collection
+    {
+        return $this->clones->filter(fn (VoiceClone $clone): bool => $clone->isReady())->values();
     }
 
     public function saveSettings(): void
@@ -612,8 +809,18 @@ new #[Title('Calls')] class extends Component {
                     <flux:radio.group wire:model.live="voice.web_engine" :label="__('Voice engine')">
                         <flux:radio value="browser" :label="__('Browser voice (free)')" :description="__('The most natural voice on each visitor\'s device. Edge and Chrome have very natural online voices.')" />
                         <flux:radio value="kokoro" :label="__('Self-hosted natural voice (free)')" :description="\App\Services\Calls\VoiceProfile::kokoroAvailable() ? __('Kokoro, an open voice model running on your server. Same voice for every visitor.') : __('Needs the Kokoro service on the server (DOCCHAT_KOKORO_URL, see the docs).')" :disabled="! \App\Services\Calls\VoiceProfile::kokoroAvailable()" />
+                        <flux:radio value="clone" :label="__('Voice clone (free, self-hosted)')" :description="$this->readyClones->isNotEmpty() ? __('A real person\'s voice, copied with their recorded consent. Used when the call is in the clone\'s language.') : __('Make a voice clone below first.')" :disabled="$this->readyClones->isEmpty()" data-test="engine-clone" />
                     </flux:radio.group>
-                    @if ($voice['web_engine'] === 'kokoro')
+                    @if ($voice['web_engine'] === 'clone' || $voice['phone_voice'] === 'clone')
+                        <flux:select wire:model="voice.clone_id" :label="__('Voice clone')" data-test="voice-clone-pick">
+                            <flux:select.option value="">{{ __('Pick a voice') }}</flux:select.option>
+                            @foreach ($this->readyClones as $clone)
+                                <flux:select.option :value="(string) $clone->id">{{ $clone->name }} · {{ \App\Services\Voice\VoiceConsent::LANGUAGES[$clone->language] ?? $clone->language }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                    @endif
+                    @if ($voice['web_engine'] === 'clone')
+                    @elseif ($voice['web_engine'] === 'kokoro')
                         <div class="flex flex-wrap items-end gap-3">
                             <div class="min-w-56 flex-1">
                                 <flux:select wire:model="voice.kokoro_voice" :label="__('Self-hosted voice')">
@@ -652,7 +859,7 @@ new #[Title('Calls')] class extends Component {
 
                 <div class="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
                     <flux:heading size="sm">{{ __('Phone calls') }}</flux:heading>
-                    <flux:select wire:model="voice.phone_voice" :label="__('Phone voice')" :description="__('The basic voice is free. Amazon and Google voices sound more natural; on a Twilio trial they use the free credit, later they cost a little per call.')">
+                    <flux:select wire:model.live="voice.phone_voice" :label="__('Phone voice')" :description="__('The basic voice is free. Amazon and Google voices sound more natural; on a Twilio trial they use the free credit, later they cost a little per call.')">
                         @foreach ($this->phoneVoices as $id => $label)
                             <flux:select.option :value="$id">{{ $label }}</flux:select.option>
                         @endforeach
@@ -681,6 +888,82 @@ new #[Title('Calls')] class extends Component {
 
                 <flux:button type="submit" variant="primary" data-test="save-voice">{{ __('Save voice settings') }}</flux:button>
             </form>
+        </section>
+
+        {{-- Voice clones --}}
+        <section class="space-y-4" x-data="{
+                playing: null,
+                async preview(id) {
+                    this.playing = id;
+                    try {
+                        const url = await $wire.previewClone(id);
+                        if (url) await new Audio(url).play();
+                    } finally { this.playing = null; }
+                },
+            }" data-test="voice-clones">
+            <div>
+                <flux:heading>{{ __('Voice clones') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Give the assistant a real person\'s voice, such as your own or a team member\'s. A voice is only copied after that person reads a consent statement aloud on their own consent page, and they can withdraw at any time. Calls still say they are a virtual assistant.') }}</flux:text>
+            </div>
+
+            @unless (\App\Services\Voice\PocketTtsVoice::configured())
+                <flux:callout icon="information-circle" :heading="__('The voice clone server is not set up')" :text="__('Start the free voice-clone service (docker compose --profile clone) and set DOCCHAT_CLONE_URL. You can still collect consent now.')" />
+            @endunless
+
+            <form wire:submit="createClone" class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <flux:input wire:model="cloneName" :label="__('Voice name')" :placeholder="__('Sara at the front desk')" data-test="clone-name" />
+                    <flux:input wire:model="cloneSpeaker" :label="__('Speaker\'s full name')" :description="__('They say it in the consent statement.')" data-test="clone-speaker" />
+                    <flux:input wire:model="cloneEmail" type="email" :label="__('Speaker\'s email (optional)')" :description="__('Leave empty to record your own voice.')" />
+                    <flux:select wire:model="cloneLanguage" :label="__('Language they will speak')" :description="__('The clone server speaks :language.', ['language' => \App\Services\Voice\VoiceConsent::LANGUAGES[\App\Services\Voice\PocketTtsVoice::language()]])">
+                        @foreach (\App\Services\Voice\VoiceConsent::LANGUAGES as $code => $label)
+                            <flux:select.option :value="$code">{{ __($label) }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                </div>
+                <flux:checkbox wire:model="cloneSendEmail" :label="__('Email the consent link to the speaker')" />
+                <flux:button type="submit" icon="microphone" data-test="create-clone">{{ __('Ask for consent') }}</flux:button>
+            </form>
+
+            @if ($cloneLink)
+                <flux:callout icon="link" color="green" :heading="__('Consent link (shown once)')">
+                    <flux:callout.text>{{ __('Open it to record your own voice, or send it to the speaker. It works for :days days.', ['days' => (int) config('docchat.voice.clone.link_valid_days', 7)]) }}</flux:callout.text>
+                    <flux:input :value="$cloneLink" readonly copyable data-test="clone-link" />
+                </flux:callout>
+            @endif
+
+            @if ($this->clones->isNotEmpty())
+                <div class="divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">
+                    @foreach ($this->clones as $clone)
+                        <div class="flex flex-wrap items-center gap-3 p-3" wire:key="clone-{{ $clone->id }}" data-test="clone-row">
+                            <div class="min-w-48 flex-1">
+                                <div class="font-medium">{{ $clone->name }}</div>
+                                <flux:text class="text-xs">
+                                    {{ $clone->speaker_name }} · {{ __(\App\Services\Voice\VoiceConsent::LANGUAGES[$clone->language] ?? $clone->language) }}
+                                    @if ($clone->consented_at)
+                                        · {{ __('agreed :date', ['date' => $clone->consented_at->toFormattedDayDateString()]) }}
+                                    @endif
+                                    @if ($clone->failure && $clone->status !== \App\Enums\VoiceCloneStatus::Ready)
+                                        · {{ $clone->failure }}
+                                    @endif
+                                </flux:text>
+                            </div>
+                            <flux:badge size="sm" :color="match ($clone->status) { \App\Enums\VoiceCloneStatus::Ready => 'green', \App\Enums\VoiceCloneStatus::Waiting => 'amber', default => 'zinc' }">{{ $clone->status->label() }}</flux:badge>
+                            @if ($clone->isReady())
+                                <flux:button size="sm" icon="play" x-on:click="preview({{ $clone->id }})" x-bind:disabled="playing !== null">{{ __('Preview') }}</flux:button>
+                                @if ((string) $voice['clone_id'] === (string) $clone->id && $voice['web_engine'] === 'clone')
+                                    <flux:badge size="sm" color="blue">{{ __('In use') }}</flux:badge>
+                                @else
+                                    <flux:button size="sm" wire:click="useClone({{ $clone->id }})" data-test="use-clone">{{ __('Use on calls') }}</flux:button>
+                                @endif
+                            @elseif (in_array($clone->status, [\App\Enums\VoiceCloneStatus::Waiting, \App\Enums\VoiceCloneStatus::Failed], true))
+                                <flux:button size="sm" wire:click="renewCloneLink({{ $clone->id }})">{{ __('New link') }}</flux:button>
+                            @endif
+                            <flux:button size="sm" variant="ghost" icon="trash" wire:click="deleteClone({{ $clone->id }})" wire:confirm="{{ __('Delete this voice and its recording?') }}" :aria-label="__('Delete')" />
+                        </div>
+                    @endforeach
+                </div>
+            @endif
         </section>
 
         {{-- Contacts --}}

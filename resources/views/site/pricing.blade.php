@@ -60,7 +60,7 @@
         [__('Is it really free?'), __('Yes. DocChat is a portfolio project that runs only on free tiers. There is no paid plan and nothing to buy, and the app never asks for a card.')],
         [__('What are the limits on the hosted version?'), __('The app\'s AI keys are on free tiers that every workspace shares, so answers can be slow or briefly busy at peak times. Adding your own free key or turning on answers in the browser avoids that.')],
         [__('Can I use my ChatGPT, Gemini or Claude subscription?'), __('No. Those subscriptions can\'t be used by other apps under their terms. Free API keys from Groq or Google AI Studio work instead, and so does the AI built into Chrome.')],
-        [__('Do voice calls cost anything?'), __('Website calls are free: they use the visitor\'s browser voice, or the open Kokoro voice if the server runs it. The phone line runs on a free Twilio trial. On the trial, Twilio\'s basic voice is free; its Amazon and Google voices and voicemail detection use the trial credit, and Twilio charges for them after the trial. DocChat labels those choices on the Calls page.')],
+        [__('Do voice calls cost anything?'), __('Website calls are free: they use the visitor\'s browser voice, or the open Kokoro voice if the server runs it. Voice clones are free too, on your own server. The phone line runs on a free Twilio trial. On the trial, Twilio\'s basic voice is free; its Amazon and Google voices and voicemail detection use the trial credit, and Twilio charges for them after the trial. DocChat labels those choices on the Calls page.')],
         [__('Where are my documents stored?'), __('On this server, private to your workspace. The hosted version is for testing, so please upload test documents only. Self-host for anything private.')],
         [__('Will paid plans come later?'), __('Not planned. If that ever changes, it will be announced here first, and the self-hosted version stays free under the MIT license.')],
     ];
@@ -118,6 +118,7 @@
                         @foreach ([
                             [__('Website calls with the browser\'s voice'), __('Free')],
                             [__('Self-hosted natural voice (Kokoro)'), __('Free, on your own server')],
+                            [__('Voice clones, with the speaker\'s recorded consent (Pocket TTS)'), __('Free, on your own server')],
                             [__('Speech recognition (Groq Whisper)'), __('Free tier, shared: 300 recordings a day per workspace')],
                             [__('Phone line on a Twilio trial'), __('Free: 75 minutes over 30 days, to numbers you verify')],
                             [__('Twilio basic phone voice'), __('Free')],

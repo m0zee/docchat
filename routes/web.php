@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CallLinkController;
 use App\Http\Controllers\DocsController;
+use App\Http\Controllers\VoiceConsentController;
 use App\Http\Controllers\WidgetPreviewController;
 use App\Http\Controllers\WorkspaceInvitationController;
 use Illuminate\Support\Facades\Route;
@@ -22,6 +23,12 @@ Route::post('invitations/{token}/accept', [WorkspaceInvitationController::class,
 // Outbound call links: no account needed, the token in the link is the key.
 Route::get('call/{token}', [CallLinkController::class, 'show'])->middleware('throttle:30,1')->name('calls.link');
 Route::post('call/{token}/opt-out', [CallLinkController::class, 'optOut'])->middleware('throttle:10,1')->name('calls.opt-out');
+
+// Voice clone consent: the speaker records the consent statement here. The
+// token in the link is the key; it also withdraws consent at any time.
+Route::get('voice-consent/{token}', [VoiceConsentController::class, 'show'])->middleware('throttle:30,1')->name('voice-consent.show');
+Route::post('voice-consent/{token}/recording', [VoiceConsentController::class, 'record'])->middleware('throttle:10,1')->name('voice-consent.record');
+Route::post('voice-consent/{token}/withdraw', [VoiceConsentController::class, 'withdraw'])->middleware('throttle:10,1')->name('voice-consent.withdraw');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');

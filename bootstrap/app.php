@@ -43,7 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
             // behind our own signature (Twilio doesn't sign media requests).
             Route::middleware('throttle:240,1')->prefix('twilio/voice')->name('twilio.voice.')->group(function (): void {
                 Route::get('hold.wav', [TwilioAudioController::class, 'hold'])->name('hold');
-                Route::get('audio/{clip}', [TwilioAudioController::class, 'clip'])->where('clip', '[a-f0-9]{64}')->name('audio');
+                Route::get('audio/{clip}', [TwilioAudioController::class, 'clip'])->where('clip', '(c[0-9]+_)?[a-f0-9]{64}')->name('audio');
             });
         },
     )

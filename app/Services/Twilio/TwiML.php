@@ -3,9 +3,11 @@
 namespace App\Services\Twilio;
 
 use App\Exceptions\SpeechException;
+use App\Models\VoiceClone;
 use App\Models\Workspace;
 use App\Services\Calls\VoiceProfile;
 use App\Services\Voice\KokoroTextToSpeech;
+use App\Services\Voice\PocketTtsVoice;
 use Illuminate\Http\Response;
 
 /**
@@ -20,15 +22,16 @@ final class TwiML
 {
     /**
      * @param  array<string, mixed>  $profile
-     * @param  array{voice: string, language: string, ssml: bool, kokoro: bool}  $phone
+     * @param  array{voice: string, language: string, ssml: bool, kokoro: bool, clone: bool}  $phone
      */
-    private function __construct(private array $profile, private array $phone) {}
+    private function __construct(private array $profile, private array $phone, private ?VoiceClone $clone = null) {}
 
     public static function for(Workspace $workspace): self
     {
         $profile = VoiceProfile::for($workspace);
+        $clone = $profile['phone_voice'] === 'clone' ? VoiceProfile::voiceClone($workspace, $profile) : null;
 
-        return new self($profile, VoiceProfile::phone($profile));
+        return new self($profile, VoiceProfile::phone($profile, $clone), $clone);
     }
 
     /**
@@ -76,6 +79,14 @@ final class TwiML
      */
     public function speech(string $text): string
     {
+        if ($this->phone['clone'] && $this->clone !== null) {
+            $clip = self::cloneClip($this->clone, $text);
+
+            if ($clip !== null) {
+                return '<Play>'.self::text(TwilioSignature::url('twilio/voice/audio/'.$clip.'?sig='.self::clipSignature($clip))).'</Play>';
+            }
+        }
+
         if ($this->phone['kokoro']) {
             $clip = self::kokoroClip($this->profile, $text);
 
@@ -109,6 +120,17 @@ final class TwiML
 
         try {
             return app(KokoroTextToSpeech::class)->clip($text, $voice, VoiceProfile::prosody($profile)['rate']);
+        } catch (SpeechException $exception) {
+            report($exception);
+
+            return null;
+        }
+    }
+
+    private static function cloneClip(VoiceClone $clone, string $text): ?string
+    {
+        try {
+            return app(PocketTtsVoice::class)->clip($clone, $text);
         } catch (SpeechException $exception) {
             report($exception);
 

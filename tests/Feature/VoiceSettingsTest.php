@@ -389,7 +389,7 @@ test('the phone line uses the chosen voice, language, speed and pace', function 
 test('the free basic voice is used for languages it speaks, with the voice\'s gender', function () {
     $basic = fn (array $values) => VoiceProfile::phone(array_merge(VoiceProfile::DEFAULTS, $values));
 
-    expect($basic(['gender' => 'male', 'language' => 'de-DE']))->toBe(['voice' => 'man', 'language' => 'de-DE', 'ssml' => false, 'kokoro' => false])
+    expect($basic(['gender' => 'male', 'language' => 'de-DE']))->toBe(['voice' => 'man', 'language' => 'de-DE', 'ssml' => false, 'kokoro' => false, 'clone' => false])
         ->and($basic(['language' => 'ur-PK'])['language'])->toBe('en-US')
         // A paid voice that doesn't speak the language falls back to the basic one.
         ->and($basic(['language' => 'fr-FR', 'phone_voice' => 'Polly.Joanna-Neural'])['voice'])->toBe('woman')

@@ -10,6 +10,7 @@ use App\Models\Call;
 use App\Services\Calls\CallAgent;
 use App\Services\Calls\VoiceProfile;
 use App\Services\Voice\KokoroTextToSpeech;
+use App\Services\Voice\PocketTtsVoice;
 use App\Services\Voice\Transcriber;
 use App\Support\Api\ApiError;
 use Illuminate\Http\JsonResponse;
@@ -42,7 +43,7 @@ class CallSessionController extends Controller
             'greeting' => $greeting,
             'purpose' => $call->purpose,
             'max_seconds' => Call::maxSeconds(),
-            'voice' => VoiceProfile::client(VoiceProfile::for($call->workspace), $call->language),
+            'voice' => self::clientVoice($call, VoiceProfile::for($call->workspace)),
         ]]);
     }
 
@@ -128,16 +129,17 @@ class CallSessionController extends Controller
      *
      * @response 200 string audio/mpeg
      */
-    public function speech(Request $request, KokoroTextToSpeech $kokoro): Response|JsonResponse
+    public function speech(Request $request, KokoroTextToSpeech $kokoro, PocketTtsVoice $pocket): Response|JsonResponse
     {
         $call = AuthenticateCallToken::call($request);
         $request->validate(['text' => ['required', 'string', 'max:700']]);
         $profile = VoiceProfile::for($call->workspace);
+        $clone = $profile['web_engine'] === 'clone' ? VoiceProfile::voiceClone($call->workspace, $profile, $call->language) : null;
         $voice = VoiceProfile::kokoroVoice($profile, $call->language);
         $text = trim((string) $request->input('text'));
 
-        if (! KokoroTextToSpeech::configured() || $voice === null) {
-            return ApiError::response(404, 'voice_unavailable', 'The Kokoro voice is not set up for this language.');
+        if ($clone === null && (! KokoroTextToSpeech::configured() || $voice === null)) {
+            return ApiError::response(404, 'voice_unavailable', 'The self-hosted voice is not set up for this language.');
         }
 
         if (! $this->agent->maySpeak($call, $text)) {
@@ -145,7 +147,11 @@ class CallSessionController extends Controller
         }
 
         try {
-            $audio = $kokoro->speakAs($text, $voice, VoiceProfile::prosody($profile)['rate']);
+            if ($clone !== null) {
+                return new Response($pocket->speak($clone, $text), 200, ['Content-Type' => 'audio/wav', 'Cache-Control' => 'private, max-age=600']);
+            }
+
+            $audio = $kokoro->speakAs($text, (string) $voice, VoiceProfile::prosody($profile)['rate']);
         } catch (SpeechException $exception) {
             report($exception);
 
@@ -161,9 +167,23 @@ class CallSessionController extends Controller
      */
     private function voice(Call $call, array $profile): array
     {
-        $client = VoiceProfile::client($profile, $call->language);
+        $client = self::clientVoice($call, $profile);
 
         return ['lang' => $client['lang'], 'fillers' => $client['fillers'], 'engine' => $client['engine']];
+    }
+
+    /**
+     * The voice settings for the browser, with the clone when it is picked
+     * and can speak the call's language.
+     *
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    public static function clientVoice(Call $call, array $profile): array
+    {
+        $clone = $profile['web_engine'] === 'clone' ? VoiceProfile::voiceClone($call->workspace, $profile, $call->language) : null;
+
+        return VoiceProfile::client($profile, $call->language, $clone);
     }
 
     /**

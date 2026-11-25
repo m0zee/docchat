@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Twilio;
 use App\Http\Controllers\Controller;
 use App\Services\Twilio\TwiML;
 use App\Services\Voice\KokoroTextToSpeech;
+use App\Services\Voice\PocketTtsVoice;
 use App\Services\Voice\Wav;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -28,13 +29,14 @@ class TwilioAudioController extends Controller
 
     public function clip(Request $request, string $clip): Response
     {
-        $path = KokoroTextToSpeech::path($clip);
+        $cloned = PocketTtsVoice::isClip($clip);
+        $path = $cloned ? PocketTtsVoice::path($clip) : KokoroTextToSpeech::path($clip);
 
         abort_unless(hash_equals(TwiML::clipSignature($clip), (string) $request->query('sig')), 403);
         abort_unless(Storage::disk('local')->exists($path), 404);
 
         return new Response((string) Storage::disk('local')->get($path), 200, [
-            'Content-Type' => 'audio/mpeg',
+            'Content-Type' => $cloned ? 'audio/wav' : 'audio/mpeg',
             'Cache-Control' => 'private, max-age=3600',
         ]);
     }

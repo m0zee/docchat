@@ -160,6 +160,21 @@ return [
             'timeout' => (int) env('DOCCHAT_KOKORO_TIMEOUT', 30),
             'max_chars' => (int) env('DOCCHAT_KOKORO_MAX_CHARS', 600),
         ],
+        // Voice clones: Kyutai Pocket TTS, self-hosted (the "voice-clone"
+        // service in docker-compose.yml, profile "clone"). Free, runs on a
+        // CPU. A clone is only made from the speaker's own consent recording
+        // (docs/calls.md). One language per server: en, es, fr or de.
+        'clone' => [
+            'url' => env('DOCCHAT_CLONE_URL'),
+            'language' => env('DOCCHAT_CLONE_LANGUAGE', 'en'),
+            'timeout' => (int) env('DOCCHAT_CLONE_TIMEOUT', 60),
+            'max_chars' => (int) env('DOCCHAT_CLONE_MAX_CHARS', 500),
+            'per_workspace' => (int) env('DOCCHAT_CLONE_PER_WORKSPACE', 3),
+            'link_valid_days' => (int) env('DOCCHAT_CLONE_LINK_DAYS', 7),
+            // Seconds of recording accepted on the consent page.
+            'min_seconds' => (int) env('DOCCHAT_CLONE_MIN_SECONDS', 8),
+            'max_seconds' => (int) env('DOCCHAT_CLONE_MAX_SECONDS', 45),
+        ],
     ],
 
     // The calling agent (docs/calls.md).
