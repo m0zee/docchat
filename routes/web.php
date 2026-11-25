@@ -23,6 +23,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('workspace/api-keys', 'pages::workspace.api-keys')->name('workspace.api-keys');
     Route::livewire('workspace/usage', 'pages::workspace.usage')->name('workspace.usage');
     Route::livewire('workspace/webhooks', 'pages::workspace.webhooks')->name('workspace.webhooks');
+    Route::livewire('workspace/chat-apps', 'pages::workspace.channels')->name('workspace.channels');
 });
 
 require __DIR__.'/settings.php';

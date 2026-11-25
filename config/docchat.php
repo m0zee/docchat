@@ -47,6 +47,7 @@ return [
     'workspace_nav' => [
         'workspace.members' => 'Members',
         'workspace.api-keys' => 'API keys',
+        'workspace.channels' => 'Chat apps',
         'workspace.webhooks' => 'Webhooks',
         'workspace.usage' => 'Usage',
     ],
@@ -65,6 +66,18 @@ return [
         'ttl_days' => (int) env('DOCCHAT_ANSWER_CACHE_TTL_DAYS', 7),
         'query_embeddings' => (bool) env('DOCCHAT_QUERY_EMBEDDING_CACHE', true),
         'embedding_ttl_days' => (int) env('DOCCHAT_QUERY_EMBEDDING_CACHE_TTL_DAYS', 30),
+    ],
+
+    // Shared chat bots (Telegram, WhatsApp, Discord) run in n8n with one
+    // platform service key. Documents sent to a bot report back to the bot's
+    // workflow through this signed webhook, whatever workspace they are in.
+    // "{channel}" in the URL is replaced with telegram or whatsapp.
+    'channels' => [
+        'telegram' => [
+            'bot_username' => env('TELEGRAM_BOT_USERNAME'),
+        ],
+        'webhook_url' => env('DOCCHAT_CHANNEL_WEBHOOK_URL'),
+        'webhook_secret' => env('DOCCHAT_CHANNEL_WEBHOOK_SECRET'),
     ],
 
     'evals' => [

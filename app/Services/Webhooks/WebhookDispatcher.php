@@ -2,6 +2,8 @@
 
 namespace App\Services\Webhooks;
 
+use App\Enums\DocumentSource;
+use App\Jobs\SendChannelWebhookJob;
 use App\Jobs\SendWebhookJob;
 use App\Models\Document;
 use App\Models\Webhook;
@@ -25,7 +27,7 @@ class WebhookDispatcher
 
     public function document(Document $document, string $event): void
     {
-        $this->dispatch($document->workspace_id, $event, [
+        $data = [
             'document' => [
                 'id' => $document->id,
                 'title' => $document->title,
@@ -36,6 +38,14 @@ class WebhookDispatcher
                 'page_count' => $document->page_count,
                 'meta' => (object) ($document->meta ?? []),
             ],
-        ]);
+        ];
+
+        $this->dispatch($document->workspace_id, $event, $data);
+
+        if (in_array($document->source, [DocumentSource::Telegram, DocumentSource::WhatsApp], true)
+            && filled(config('docchat.channels.webhook_url')) && filled(config('docchat.channels.webhook_secret'))) {
+            // Sent to a shared bot: tell the bot's workflow, which replies in the chat.
+            SendChannelWebhookJob::dispatch($document->source->value, $event, $document->workspace_id, $data);
+        }
     }
 }
