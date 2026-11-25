@@ -103,3 +103,28 @@ jobs:
           docker run --rm -e N8N_DIAGNOSTICS_ENABLED=false -v "$PWD/n8n:/workflows:ro" "$image" \
             import:workflow --separate --input=/workflows 2>&1 | tee import.log
           grep -q "Successfully imported $(ls n8n/*.json | wc -l) workflows" import.log
+
+  widget-browser:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      # Playwright is installed outside the project, only for this check.
+      - name: Install Playwright and Chromium
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Check the widget in a browser
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/widget.cjs

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ChannelLinkController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\EvalController;
+use App\Http\Controllers\Api\WidgetController;
 use App\Http\Controllers\Api\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,14 +25,18 @@ Route::prefix('v1')->name('api.')->group(function () {
     // Every route below takes "Authorization: Bearer dc_live_..." and runs in
     // the key's workspace, or a service key plus "X-DocChat-Link" and runs in
     // the linked chat's workspace. Model ids are looked up inside it.
+    // Asking also works with the website widget's public key (dc_pub_...),
+    // from the origins listed for it, in widget conversations only.
+    Route::middleware(['api.key:live,service,public', 'api.workspace', 'api.ability:ask'])->group(function () {
+        Route::post('ask', AskController::class)->name('ask');
+        Route::match(['get', 'post'], 'ask/stream', AskStreamController::class)->name('ask.stream');
+        Route::get('widget', WidgetController::class)->name('widget');
+    });
+
     Route::middleware(['api.key:live,service', 'api.workspace'])->group(function () {
         Route::get('workspace', WorkspaceController::class)->name('workspace');
 
-        Route::middleware('api.ability:ask')->group(function () {
-            Route::post('ask', AskController::class)->name('ask');
-            Route::match(['get', 'post'], 'ask/stream', AskStreamController::class)->name('ask.stream');
-            Route::post('conversations/end', [ConversationController::class, 'end'])->name('conversations.end');
-        });
+        Route::post('conversations/end', [ConversationController::class, 'end'])->middleware('api.ability:ask')->name('conversations.end');
 
         Route::middleware('api.ability:documents:read')->group(function () {
             Route::get('documents', [DocumentController::class, 'index'])->name('documents.index');

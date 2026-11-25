@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\WidgetPreviewController;
 use App\Http\Controllers\WorkspaceInvitationController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('workspace/usage', 'pages::workspace.usage')->name('workspace.usage');
     Route::livewire('workspace/webhooks', 'pages::workspace.webhooks')->name('workspace.webhooks');
     Route::livewire('workspace/chat-apps', 'pages::workspace.channels')->name('workspace.channels');
+    Route::livewire('workspace/widget', 'pages::workspace.widget')->name('workspace.widget');
+    Route::get('workspace/widget/preview', WidgetPreviewController::class)->name('workspace.widget.preview');
 });
 
 require __DIR__.'/settings.php';

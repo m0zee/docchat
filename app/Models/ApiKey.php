@@ -120,6 +120,39 @@ class ApiKey extends Model
         return in_array($ability->value, $this->abilities, true);
     }
 
+    /**
+     * Whether a browser on $origin may use this key. Public keys list their
+     * origins; DocChat's own origin is always allowed for the live preview.
+     */
+    public function allowsOrigin(?string $origin): bool
+    {
+        $origin = self::normalizeOrigin($origin);
+
+        if ($origin === null) {
+            return false;
+        }
+
+        $allowed = array_map(self::normalizeOrigin(...), [...($this->allowed_origins ?? []), (string) config('app.url')]);
+
+        return in_array($origin, $allowed, true);
+    }
+
+    /**
+     * "https://Example.com/path" becomes "https://example.com". Null for anything that is not http(s).
+     */
+    public static function normalizeOrigin(?string $value): ?string
+    {
+        $parts = parse_url(trim((string) $value));
+
+        if (! is_array($parts) || ! in_array($parts['scheme'] ?? null, ['http', 'https'], true) || ($parts['host'] ?? '') === '') {
+            return null;
+        }
+
+        $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+
+        return strtolower($parts['scheme'].'://'.$parts['host']).$port;
+    }
+
     public function isRevoked(): bool
     {
         return $this->revoked_at !== null;
