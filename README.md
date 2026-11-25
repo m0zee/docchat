@@ -33,6 +33,8 @@ DocChat is a Laravel app where you upload PDF, TXT or Markdown files and ask que
 - **Telegram bot** ([setup](n8n/README.md#telegram-bot)): one bot for every workspace. An owner links a chat with a one-time code from **Workspace > Chat apps**; the chat then gets answers with sources from that workspace, keeps its own conversation (`/new` starts over), and can add documents by sending a file. In groups it answers only when mentioned.
 - **Discord** ([setup](docs/discord.md)): `/ask`, `/link`, `/new` and `/unlink` slash commands answered by DocChat itself, with Ed25519-verified requests, deferred answers from the queue, and mentions disabled.
 - **WhatsApp bot** ([setup](n8n/README.md#whatsapp-bot)) on Meta's Cloud API through n8n, linked the same way, replying only inside WhatsApp's 24-hour window.
+- **Calling agent** ([setup](docs/calls.md)): a voice agent that answers from the workspace's documents. Website visitors press **Call** in the widget and talk in the browser (Groq Whisper hears them, the browser's own voice reads the answer). Owners call contacts who agreed to it, with a call link or a real phone call through a free Twilio trial, and people can ring the workspace's Twilio number. Every call says it is an automated assistant, keeps a transcript and a log under **Workspace > Calls**, and "stop calling" opts the person out for good.
+- **Voice notes** in Telegram and WhatsApp are transcribed and answered, and can be answered with audio too.
 - **Eval API:** `POST /api/v1/evals/run` runs an eval set in the background, one case per queued job, and posts signed results to a callback URL.
 
 ## Channels
@@ -47,6 +49,8 @@ Every channel uses the same `AnswerService`, so retrieval, the refusal rule, cit
 | Telegram | anyone in a linked chat | n8n workflow, platform service key | [n8n/README.md](n8n/README.md#telegram-bot) |
 | WhatsApp | anyone who messages the number | n8n workflow, platform service key | [n8n/README.md](n8n/README.md#whatsapp-bot) |
 | Discord | members of a linked server | slash commands to `/discord/interactions` | [docs/discord.md](docs/discord.md) |
+| Voice calls in the browser | guests on the client's site, or contacts with a call link | widget **Call** button or `/call/<token>`, one-call `dc_call_` token | Workspace > Calls |
+| Phone calls | anyone who rings the Twilio number, or contacts who agreed | Twilio webhooks with `<Gather>` speech and `<Say>` | [docs/calls.md](docs/calls.md) |
 
 One bot per chat app serves every workspace. An owner creates a one-time code under **Workspace > Chat apps**, and the code links that chat or server to the workspace.
 
@@ -186,6 +190,7 @@ n8n runs next to DocChat in the same Docker stack, with its own database, and ta
 - **Widget keys** (`dc_pub_`) are public by design. They can only ask, only from the websites the owner lists (checked on the server against `Origin`), only in guest conversations named by a random visitor id, and with a rate limit per visitor.
 - **Service keys** (`dc_svc_`) for the shared bots belong to no workspace. They act only in the workspace of a chat that an owner linked with a one-time code (hashed, 15 minutes, single use), named in the `X-DocChat-Link` header.
 - **Discord** requests are verified with Ed25519 over the timestamp and raw body, and anything older than 5 minutes is refused.
+- **Calls.** A browser call's `dc_call_` token works for one call only, stored hashed, until it ends or expires. Twilio webhooks are checked with Twilio's `X-Twilio-Signature` and the call's own `CallSid`. Outbound calls only go to contacts with recorded consent, never after an opt-out, and phone calls only inside the calling hours.
 - **Webhooks** carry `X-DocChat-Signature: sha256=<HMAC of the raw body>` and `X-DocChat-Timestamp`. Receivers should verify the HMAC and reject anything older than 5 minutes. Signing secrets are encrypted at rest.
 
 ## Design decisions and trade-offs
@@ -234,9 +239,9 @@ Open http://localhost:8000 and log in as `demo@docchat.test` / `password`. The s
 docker compose exec app composer ci:check   # Pint, PHPStan and the Pest suite
 ```
 
-CI also imports every n8n workflow into the pinned n8n image, builds the production image, and checks the widget in Chromium (`tests/browser/widget.cjs`).
+CI also imports every n8n workflow into the pinned n8n image, builds the production image, and checks the widget and voice calls in Chromium with a fake microphone (`tests/browser/widget.cjs`, `tests/browser/voice-call.cjs`).
 
-The tests need no API keys: every Gemini, Groq and OpenRouter call is faked, and stray HTTP requests fail the test. They do need the Postgres container, because retrieval is tested against real pgvector queries.
+The tests need no API keys: every Gemini, Groq, OpenRouter and Twilio call is faked, and stray HTTP requests fail the test. They do need the Postgres container, because retrieval is tested against real pgvector queries.
 
 ## Deploy
 
@@ -260,6 +265,10 @@ Laravel 13, PHP 8.4, Livewire 4 with Flux, Tailwind 4, PostgreSQL 16 with pgvect
 | Documents | Chat (dark mode) |
 |---|---|
 | ![Documents page](docs/screenshots/documents-light.png) | ![Chat in dark mode](docs/screenshots/chat-dark.png) |
+
+| Calling from the widget | Workspace > Calls |
+|---|---|
+| ![A voice call in the website widget](docs/screenshots/widget-call.png) | ![Calls page with contacts and the call log](docs/screenshots/calls-light.png) |
 
 ## License
 

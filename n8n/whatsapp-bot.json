@@ -5,7 +5,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## DocChat WhatsApp bot\nWhatsApp Business Cloud API (Meta). A chat is linked by sending `link <code>` (code from DocChat > Workspace > Chat apps), then questions go to that workspace with a **service key** and `X-DocChat-Link`.\n\n- `new`, `unlink`, `help`.\n- Files sent to the number are added; the second trigger says when they are ready.\n- Only replies to people who wrote first, inside WhatsApp's 24-hour window. No template messages.\n\nSetup: see `n8n/README.md`.",
+        "content": "## DocChat WhatsApp bot\nWhatsApp Business Cloud API (Meta). A chat is linked by sending `link <code>` (code from DocChat > Workspace > Chat apps), then questions go to that workspace with a **service key** and `X-DocChat-Link`.\n\n- `new`, `unlink`, `help`.\n- Files sent to the number are added; the second trigger says when they are ready.\n- Only replies to people who wrote first, inside WhatsApp's 24-hour window. No template messages.\n- Voice messages are transcribed (Groq Whisper) and answered; with `DOCCHAT_VOICE_REPLIES=true` the answer also comes back as audio.\n\nSetup: see `n8n/README.md`.",
         "width": 500,
         "height": 380
       },
@@ -38,7 +38,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Decides what to do with each incoming WhatsApp message.\n// Status updates (sent, delivered, read) are ignored.\nconst value = $json;\nconst message = (value.messages || [])[0];\nif (!message) return { json: { route: 'ignore' } };\n\nconst text = String(message.text?.body || message.document?.caption || '').trim();\nconst [first = '', ...rest] = text.split(/\\s+/);\nconst word = first.toLowerCase().replace(/^\\//, '');\n\nlet route = 'ask';\nif (message.type === 'document') route = 'document';\nelse if (message.type !== 'text') route = 'unsupported';\nelse if (word === 'link' && rest[0]) route = 'link';\nelse if (word === 'help' || word === 'start') route = 'help';\nelse if (word === 'new' && rest.length === 0) route = 'new';\nelse if (word === 'unlink' && rest.length === 0) route = 'unlink';\n\nreturn {\n  json: {\n    route,\n    wa_id: String(message.from),\n    phone_number_id: String(value.metadata?.phone_number_id || ''),\n    link: `whatsapp:${message.from}`,\n    code: rest[0] || null,\n    question: text,\n    label: value.contacts?.[0]?.profile?.name || String(message.from),\n    media_id: message.document?.id || null,\n    file_name: message.document?.filename || 'document',\n  },\n};"
+        "jsCode": "// Decides what to do with each incoming WhatsApp message.\n// Status updates (sent, delivered, read) are ignored.\nconst value = $json;\nconst message = (value.messages || [])[0];\nif (!message) return { json: { route: 'ignore' } };\n\nconst text = String(message.text?.body || message.document?.caption || '').trim();\nconst [first = '', ...rest] = text.split(/\\s+/);\nconst word = first.toLowerCase().replace(/^\\//, '');\n\nlet route = 'ask';\nif (message.type === 'document') route = 'document';\nelse if (message.type === 'audio') route = 'voice';\nelse if (message.type !== 'text') route = 'unsupported';\nelse if (word === 'link' && rest[0]) route = 'link';\nelse if (word === 'help' || word === 'start') route = 'help';\nelse if (word === 'new' && rest.length === 0) route = 'new';\nelse if (word === 'unlink' && rest.length === 0) route = 'unlink';\n\nreturn {\n  json: {\n    route,\n    wa_id: String(message.from),\n    phone_number_id: String(value.metadata?.phone_number_id || ''),\n    link: `whatsapp:${message.from}`,\n    code: rest[0] || null,\n    question: text,\n    label: value.contacts?.[0]?.profile?.name || String(message.from),\n    media_id: message.document?.id || message.audio?.id || null,\n    file_name: message.document?.filename || 'document',\n  },\n};"
       },
       "id": "0f9ba14e-2d3a-5c29-b8ff-0064d5c771e7",
       "name": "Route",
@@ -220,6 +220,30 @@
               },
               "renameOutput": true,
               "outputKey": "unsupported"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "34a2c293-f22b-5f81-902f-6a1d93ba32b9",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "voice",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "voice"
             }
           ]
         },
@@ -489,7 +513,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Turns each DocChat response into WhatsApp text messages.\nconst notLinked = 'This chat is not linked to a DocChat workspace yet. In DocChat, open *Workspace > Chat apps*, create a link code, and send it here as: link CODE';\nconst help = [\n  '*DocChat*',\n  'Ask a question about the documents and I answer with sources.',\n  '',\n  'link CODE: link this chat (code from Workspace > Chat apps)',\n  'new: start a new conversation',\n  'unlink: unlink this chat',\n  '',\n  'Send a PDF, TXT or Markdown file to add it.',\n].join('\\n');\nconst out = [];\n\n$input.all().forEach((item, index) => {\n  const from = $('Route').itemMatching(index).json;\n  const status = item.json.statusCode;\n  const body = item.json.body || {};\n  const error = body.error || {};\n  let texts;\n\n  if (from.route === 'help') texts = [help];\n  else if (from.route === 'unsupported') texts = ['I can read text messages and PDF, TXT or Markdown files.'];\n  else if (error.code === 'chat_not_linked') texts = [notLinked];\n  else if (status === 429 || error.code === 'model_busy' || error.code === 'rate_limited') texts = ['The model is busy. Try again in a minute.'];\n  else if (from.route === 'link') texts = [status === 200 ? `Linked to *${body.data.workspace.name}*. Ask me anything about its documents.` : 'That code did not work. It may be used or older than 15 minutes. Create a new one in DocChat.'];\n  else if (from.route === 'new') texts = ['Started a new conversation.'];\n  else if (from.route === 'unlink') texts = [body.data?.was_linked ? 'This chat is unlinked.' : 'This chat was not linked.'];\n  else if (from.route === 'document') texts = [status === 202 ? `Got *${from.file_name}*. I will tell you when it is ready.` : `I could not take that file: ${Object.values(error.details?.fields || {}).flat()[0] || error.message || 'unknown error'}`];\n  else if (status === 200 && Array.isArray(body.data?.formatted)) texts = body.data.formatted;\n  else texts = ['Something went wrong while answering. Please try again.'];\n\n  for (const text of texts) out.push({ json: { wa_id: from.wa_id, phone_number_id: from.phone_number_id, text } });\n});\n\nreturn out;"
+        "jsCode": "// Turns each DocChat response into WhatsApp text messages.\nconst notLinked = 'This chat is not linked to a DocChat workspace yet. In DocChat, open *Workspace > Chat apps*, create a link code, and send it here as: link CODE';\nconst help = [\n  '*DocChat*',\n  'Ask a question about the documents and I answer with sources.',\n  '',\n  'link CODE: link this chat (code from Workspace > Chat apps)',\n  'new: start a new conversation',\n  'unlink: unlink this chat',\n  '',\n  'Send a PDF, TXT or Markdown file to add it.',\n  'Send a voice message to ask by voice.',\n].join('\\n');\nconst out = [];\n\n$input.all().forEach((item, index) => {\n  const from = $('Route').itemMatching(index).json;\n  const status = item.json.statusCode;\n  const body = item.json.body || {};\n  const error = body.error || {};\n  let texts;\n\n  if (from.route === 'help') texts = [help];\n  else if (from.route === 'unsupported') texts = ['I can read text and voice messages, and PDF, TXT or Markdown files.'];\n  else if (error.code === 'chat_not_linked') texts = [notLinked];\n  else if (from.route === 'voice' && error.code === 'no_speech') texts = ['I could not hear any words in that voice message.'];\n  else if (status === 429 || error.code === 'model_busy' || error.code === 'rate_limited' || error.code === 'speech_busy') texts = ['The model is busy. Try again in a minute.'];\n  else if (from.route === 'link') texts = [status === 200 ? `Linked to *${body.data.workspace.name}*. Ask me anything about its documents.` : 'That code did not work. It may be used or older than 15 minutes. Create a new one in DocChat.'];\n  else if (from.route === 'new') texts = ['Started a new conversation.'];\n  else if (from.route === 'unlink') texts = [body.data?.was_linked ? 'This chat is unlinked.' : 'This chat was not linked.'];\n  else if (from.route === 'document') texts = [status === 202 ? `Got *${from.file_name}*. I will tell you when it is ready.` : `I could not take that file: ${Object.values(error.details?.fields || {}).flat()[0] || error.message || 'unknown error'}`];\n  else if (status === 200 && Array.isArray(body.data?.formatted)) texts = from.route === 'voice' ? [`\\u{1F3A4} _${body.data.transcript}_`, ...body.data.formatted] : body.data.formatted;\n  else texts = ['Something went wrong while answering. Please try again.'];\n\n  for (const text of texts) out.push({ json: { wa_id: from.wa_id, phone_number_id: from.phone_number_id, text } });\n});\n\nreturn out;"
       },
       "id": "0436ce48-f7db-5bff-99f3-e62e34d0894e",
       "name": "Build reply",
@@ -629,6 +653,203 @@
         940,
         820
       ]
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "operation": "mediaUrlGet",
+        "mediaGetId": "={{ $json.media_id }}"
+      },
+      "id": "2f8db68d-9091-5b8c-bf5f-f44367f169cf",
+      "name": "Get voice note URL",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "254d6b6b-487f-5aa2-a7b1-5c64d40abe3e",
+      "name": "Download voice note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        940,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/voice/ask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DocChat-Link",
+              "value": "={{ $('Route').item.json.link }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 90000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "channel",
+              "value": "whatsapp"
+            },
+            {
+              "parameterType": "formData",
+              "name": "external_conversation_id",
+              "value": "={{ $('Route').item.json.link }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "format",
+              "value": "whatsapp"
+            }
+          ]
+        }
+      },
+      "id": "b3dba6f4-a4a3-5c98-b778-cf778e5178e7",
+      "name": "Ask by voice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1180,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ef9fd53a-08a9-5e3f-9338-f92007dcee5c",
+              "leftValue": "={{ $json.statusCode === 200 && $json.body?.data?.voice_replies === true && String($json.body?.data?.spoken || '') !== '' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "f6591762-c321-5104-af20-cfb8812de1cc",
+      "name": "Voice reply on?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1420,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "={{ $env.DOCCHAT_API_URL }}/api/v1/voice/speak",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DocChat-Link",
+              "value": "={{ $('Route').item.json.link }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.body.data.spoken }) }}",
+        "options": {
+          "timeout": 90000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "b3b9b263-b0db-567c-8bd9-acd6437b44a4",
+      "name": "Speak answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1660,
+        1060
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "messageType": "audio",
+        "phoneNumberId": "={{ $('Route').item.json.phone_number_id }}",
+        "recipientPhoneNumber": "={{ $('Route').item.json.wa_id }}",
+        "mediaPath": "useMedian8n",
+        "mediaPropertyName": "data",
+        "additionalFields": {}
+      },
+      "id": "6dd8da9f-4854-5bf6-967b-9f23b1302af0",
+      "name": "Send voice reply",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1900,
+        1060
+      ]
     }
   ],
   "connections": {
@@ -701,6 +922,13 @@
         [
           {
             "node": "Build reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get voice note URL",
             "type": "main",
             "index": 0
           }
@@ -851,6 +1079,67 @@
         [
           {
             "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get voice note URL": {
+      "main": [
+        [
+          {
+            "node": "Download voice note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download voice note": {
+      "main": [
+        [
+          {
+            "node": "Ask by voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask by voice": {
+      "main": [
+        [
+          {
+            "node": "Build reply",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Voice reply on?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice reply on?": {
+      "main": [
+        [
+          {
+            "node": "Speak answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Speak answer": {
+      "main": [
+        [
+          {
+            "node": "Send voice reply",
             "type": "main",
             "index": 0
           }

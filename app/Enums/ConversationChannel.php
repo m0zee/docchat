@@ -10,6 +10,8 @@ enum ConversationChannel: string
     case Telegram = 'telegram';
     case WhatsApp = 'whatsapp';
     case Discord = 'discord';
+    case Voice = 'voice';
+    case Phone = 'phone';
     case Eval = 'eval';
 
     public function label(): string
@@ -21,6 +23,8 @@ enum ConversationChannel: string
             self::Telegram => 'Telegram',
             self::WhatsApp => 'WhatsApp',
             self::Discord => 'Discord',
+            self::Voice => 'Web call',
+            self::Phone => 'Phone call',
             self::Eval => 'Eval',
         };
     }
