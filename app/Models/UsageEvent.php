@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $latency_ms
  * @property string|null $cache_hit exact, semantic, or null for no cache hit
  * @property int $tokens_saved
+ * @property string|null $ai_source platform, workspace or device; null when no model ran
  * @property Carbon $created_at
  */
 #[Fillable([
@@ -33,6 +34,7 @@ use Illuminate\Support\Carbon;
     'latency_ms',
     'cache_hit',
     'tokens_saved',
+    'ai_source',
     'created_at',
 ])]
 class UsageEvent extends Model

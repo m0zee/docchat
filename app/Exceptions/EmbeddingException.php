@@ -11,6 +11,7 @@ class EmbeddingException extends RuntimeException
         string $message = '',
         public readonly bool $retryable = true,
         ?Throwable $previous = null,
+        public readonly bool $ownKeyRejected = false,
     ) {
         parent::__construct($message, 0, $previous);
     }

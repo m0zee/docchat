@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Rag\AnswerService;
+use App\Services\Rag\DevicePrompt;
 use App\Support\ChatRateLimit;
 use App\Support\CurrentWorkspace;
 use Illuminate\Database\Eloquent\Builder;
@@ -99,6 +100,70 @@ new #[Title('Chat')] class extends Component {
             // Streamed text is inserted as HTML, so escape it.
             $this->stream(e($delta), name: 'answer');
         });
+
+        $this->pending = null;
+        unset($this->messages, $this->conversations);
+    }
+
+    /**
+     * In-browser AI: search on the server, then hand the prompt to the
+     * browser, which writes the answer with its own model.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function sendOnDevice(ChatRateLimit $limit, AnswerService $answers): ?array
+    {
+        abort_unless((bool) config('docchat.device.enabled'), 404);
+
+        $this->validate(['question' => ['required', 'string', 'max:2000']]);
+
+        if ($this->pending !== null) {
+            return null;
+        }
+
+        $wait = $limit->attempt($this->user());
+
+        if ($wait !== null) {
+            $this->addError('question', __("You've sent too many questions. Try again in :seconds seconds.", ['seconds' => $wait]));
+
+            return null;
+        }
+
+        $conversation = $this->conversation ?? $this->startConversation();
+        Gate::authorize('update', $conversation);
+
+        $question = trim($this->question);
+        $this->question = '';
+
+        $result = $answers->prepareForDevice($conversation, $question);
+
+        if (! $result instanceof DevicePrompt) {
+            unset($this->messages, $this->conversations);
+
+            return ['status' => 'answered'];
+        }
+
+        $this->pending = $question;
+
+        return ['status' => 'generate'] + $result->toArray();
+    }
+
+    public function completeOnDevice(AnswerService $answers, string $token, string $answer, ?string $error = null): void
+    {
+        $conversation = $this->conversation;
+
+        if ($conversation === null) {
+            return;
+        }
+
+        Gate::authorize('update', $conversation);
+
+        $answers->completeFromDevice(
+            $conversation,
+            $token,
+            $answer,
+            $error === null || trim($error) === '' ? null : __('The AI on this device failed: :error', ['error' => mb_substr($error, 0, 200)]),
+        );
 
         $this->pending = null;
         unset($this->messages, $this->conversations);
@@ -291,7 +356,10 @@ new #[Title('Chat')] class extends Component {
         </nav>
     </aside>
 
-    <section class="flex min-w-0 flex-1 flex-col">
+    <section
+        class="flex min-w-0 flex-1 flex-col"
+        x-data="deviceAi(@js(['webllmUrl' => config('docchat.device.webllm_url'), 'webllmModel' => config('docchat.device.webllm_model')]))"
+    >
         @if ($this->readyDocuments->isEmpty())
             <div class="m-auto max-w-md rounded-xl border border-dashed border-zinc-300 p-10 text-center dark:border-zinc-700">
                 <flux:icon name="document-plus" class="mx-auto size-8 text-zinc-400" />
@@ -320,6 +388,22 @@ new #[Title('Chat')] class extends Component {
                     @endif
                 </div>
                 <flux:spacer />
+                @if (config('docchat.device.enabled'))
+                    <flux:dropdown position="bottom" align="end" x-show="checked && (chrome !== 'unavailable' || webgpu)" x-cloak data-device-picker>
+                        <flux:button size="sm" icon="cpu-chip" icon:trailing="chevron-down">
+                            <span x-text="engine === 'server' ? @js(__('AI: server')) : @js(__('AI: this device'))"></span>
+                        </flux:button>
+
+                        <flux:menu>
+                            <flux:menu.heading>{{ __('Who writes the answers') }}</flux:menu.heading>
+                            <flux:menu.item x-on:click="choose('server')" data-engine="server"><span x-text="(engine === 'server' ? '\u2713 ' : '') + @js(__('DocChat server (default)'))"></span></flux:menu.item>
+                            <flux:menu.item x-show="chrome !== 'unavailable'" x-on:click="choose('chrome')" data-engine="chrome"><span x-text="(engine === 'chrome' ? '\u2713 ' : '') + @js(__('This device: Chrome built-in AI'))"></span></flux:menu.item>
+                            <flux:menu.item x-show="webgpu" x-on:click="choose('webllm')" data-engine="webllm"><span x-text="(engine === 'webllm' ? '\u2713 ' : '') + @js(__('This device: WebLLM (about 1 GB download)'))"></span></flux:menu.item>
+                            <flux:menu.separator />
+                            <div class="max-w-72 px-2 py-1 text-xs text-zinc-500">{{ __('On-device answers are free and the question never reaches an AI company, but they are slower and less accurate than the server. The first answer downloads the model once.') }}</div>
+                        </flux:menu>
+                    </flux:dropdown>
+                @endif
                 <flux:dropdown position="bottom" align="end">
                     <flux:button size="sm" icon="funnel" icon:trailing="chevron-down" data-scope-button>
                         @if ($documentIds === [])
@@ -398,6 +482,11 @@ new #[Title('Chat')] class extends Component {
                                     @if ($message->cache_hit)
                                         · <span data-test="from-cache">{{ __('from cache') }}</span>
                                     @endif
+                                    @if ($message->ai_source === 'device')
+                                        · <span data-test="on-device">{{ __('written on this device') }}</span>
+                                    @elseif ($message->ai_source === 'workspace')
+                                        · <span data-test="own-key">{{ __('your workspace key') }}</span>
+                                    @endif
                                 </flux:text>
                             </div>
                         </div>
@@ -410,13 +499,16 @@ new #[Title('Chat')] class extends Component {
                     </div>
                     <div class="flex" wire:key="pending-answer">
                         <div class="max-w-[85%] whitespace-pre-line rounded-2xl bg-zinc-100 px-4 py-3 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100">
-                            <span wire:stream="answer"><span class="animate-pulse text-zinc-500">{{ __('Thinking…') }}</span></span>
+                            <span wire:stream="answer" data-device-answer><span class="animate-pulse text-zinc-500">{{ __('Thinking…') }}</span></span>
+                            <div x-show="progress !== null" x-cloak class="mt-2 text-xs text-zinc-500">
+                                <span x-text="progressText"></span> <span x-text="progress + '%'"></span>
+                            </div>
                         </div>
                     </div>
                 @endif
             </div>
 
-            <form wire:submit="send" class="border-t border-zinc-200 pt-3 dark:border-zinc-700">
+            <form x-on:submit.prevent="ask()" class="border-t border-zinc-200 pt-3 dark:border-zinc-700">
                 <div class="flex items-end gap-2">
                     <flux:textarea
                         wire:model="question"
@@ -424,9 +516,9 @@ new #[Title('Chat')] class extends Component {
                         resize="none"
                         :placeholder="__('Ask about your documents…')"
                         :disabled="$pending !== null"
-                        x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); $wire.send() }"
+                        x-on:keydown.enter="if (! $event.shiftKey) { $event.preventDefault(); ask() }"
                     />
-                    <flux:button type="submit" variant="primary" icon="paper-airplane" :disabled="$pending !== null" wire:loading.attr="disabled" wire:target="send,ask">
+                    <flux:button type="submit" variant="primary" icon="paper-airplane" :disabled="$pending !== null" wire:loading.attr="disabled" wire:target="send,ask,sendOnDevice,completeOnDevice" x-bind:disabled="busy">
                         {{ __('Send') }}
                     </flux:button>
                 </div>

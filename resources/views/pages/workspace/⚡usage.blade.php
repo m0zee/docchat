@@ -57,6 +57,8 @@ new #[Title('Usage')] class extends Component {
                 coalesce(sum(completion_tokens), 0) as completion_tokens,
                 coalesce(sum(embedding_tokens), 0) as embedding_tokens,
                 count(*) filter (where cache_hit is not null) as cache_hits,
+                count(*) filter (where type = 'question' and ai_source = 'workspace') as own_key,
+                count(*) filter (where type = 'question' and ai_source = 'device') as on_device,
                 coalesce(sum(tokens_saved), 0) as tokens_saved,
                 avg(latency_ms) filter (where type = 'question') as avg_latency_ms")
             ->get();
@@ -69,6 +71,8 @@ new #[Title('Usage')] class extends Component {
             'completion_tokens' => (int) $row->completion_tokens,
             'embedding_tokens' => (int) $row->embedding_tokens,
             'cache_hits' => (int) $row->cache_hits,
+            'own_key' => (int) $row->own_key,
+            'on_device' => (int) $row->on_device,
             'tokens_saved' => (int) $row->tokens_saved,
             'avg_latency_ms' => $row->avg_latency_ms === null ? null : (int) round((float) $row->avg_latency_ms),
         ])->all();
@@ -80,7 +84,7 @@ new #[Title('Usage')] class extends Component {
     #[Computed]
     public function totals(): array
     {
-        $keys = ['questions', 'ingests', 'prompt_tokens', 'completion_tokens', 'embedding_tokens', 'cache_hits', 'tokens_saved'];
+        $keys = ['questions', 'ingests', 'prompt_tokens', 'completion_tokens', 'embedding_tokens', 'cache_hits', 'tokens_saved', 'own_key', 'on_device'];
 
         return collect($keys)->mapWithKeys(fn (string $key): array => [$key => array_sum(array_column($this->rows, $key))])->all();
     }
@@ -110,6 +114,12 @@ new #[Title('Usage')] class extends Component {
             <div class="text-xs text-zinc-500">{{ __('about :n tokens saved', ['n' => number_format($this->totals['tokens_saved'])]) }}</div>
         </div>
     </div>
+
+    @if ($this->totals['own_key'] > 0 || $this->totals['on_device'] > 0)
+        <flux:text class="mb-6" data-test="usage-sources">
+            {{ __(':own answered on your own AI key, :device written on the asker\'s device.', ['own' => number_format($this->totals['own_key']), 'device' => number_format($this->totals['on_device'])]) }}
+        </flux:text>
+    @endif
 
     @if ($this->rows === [])
         <flux:text>{{ __('No usage this month.') }}</flux:text>

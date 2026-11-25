@@ -2,6 +2,7 @@
 
 namespace App\Services\Usage;
 
+use App\Enums\AiSource;
 use App\Enums\ConversationChannel;
 use App\Enums\DocumentSource;
 use App\Enums\UsageType;
@@ -33,10 +34,11 @@ class UsageRecorder
             'latency_ms' => $answer->latency_ms,
             'cache_hit' => $cacheHit,
             'tokens_saved' => $tokensSaved,
+            'ai_source' => $answer->ai_source,
         ]);
     }
 
-    public function ingest(Document $document, int $embeddingTokens, int $latencyMs): void
+    public function ingest(Document $document, int $embeddingTokens, int $latencyMs, ?AiSource $source = null): void
     {
         $this->write([
             'workspace_id' => $document->workspace_id,
@@ -45,6 +47,7 @@ class UsageRecorder
             'type' => UsageType::Ingest,
             'embedding_tokens' => $embeddingTokens,
             'latency_ms' => $latencyMs,
+            'ai_source' => $source?->value,
         ]);
     }
 

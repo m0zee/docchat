@@ -23,6 +23,9 @@ new #[Title('Widget')] class extends Component {
 
     public string $handoffText = '';
 
+    /** Let visitors' browsers write answers with Chrome's built-in AI. */
+    public bool $deviceAnswers = false;
+
     /** Allowed websites, one per line. */
     public string $origins = '';
 
@@ -41,6 +44,7 @@ new #[Title('Widget')] class extends Component {
         $this->handoffEmail = (string) $settings['handoff_email'];
         $this->handoffText = $settings['handoff_text'];
         $this->origins = implode("\n", WidgetSettings::key($this->workspace)?->allowed_origins ?? []);
+        $this->deviceAnswers = $this->workspace->setting(\App\Http\Controllers\Api\DeviceAskController::SETTING, false) === true;
     }
 
     public function save(): void
@@ -55,6 +59,7 @@ new #[Title('Widget')] class extends Component {
             'handoffEmail' => ['nullable', 'email', 'max:255'],
             'handoffText' => ['nullable', 'string', 'max:200'],
             'origins' => ['nullable', 'string', 'max:4000'],
+            'deviceAnswers' => ['boolean'],
         ]);
 
         [$origins, $invalid] = WidgetSettings::parseOrigins($this->origins);
@@ -70,6 +75,10 @@ new #[Title('Widget')] class extends Component {
 
             return;
         }
+
+        $this->workspace->update(['settings' => array_merge($this->workspace->settings ?? [], [
+            \App\Http\Controllers\Api\DeviceAskController::SETTING => $this->deviceAnswers,
+        ])]);
 
         WidgetSettings::save($this->workspace, [
             'title' => $this->title,
@@ -135,6 +144,7 @@ new #[Title('Widget')] class extends Component {
             <flux:textarea wire:model="origins" :label="__('Websites allowed to use the widget')" :description="__('One per line, like example.com or https://shop.example.com. The widget refuses to work anywhere else.')" rows="3" placeholder="example.com" />
             <flux:input wire:model="handoffEmail" type="email" :label="__('Handoff email')" :description="__('Shown when the documents have no answer, so visitors can reach a person.')" placeholder="support@example.com" />
             <flux:input wire:model="handoffText" :label="__('Handoff text')" />
+            <flux:switch wire:model="deviceAnswers" :label="__('Answer on visitors\' devices when they can')" :description="__('Visitors on Chrome 148+ with the built-in AI model already downloaded get answers written by their own browser, so they cost you no tokens. Everyone else is answered as usual. The widget never starts a model download for a visitor.')" />
             <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>
         </form>
 

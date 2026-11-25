@@ -5,6 +5,7 @@ namespace App\Evals;
 use App\Contracts\EmbeddingProvider;
 use App\Enums\ConversationChannel;
 use App\Models\Workspace;
+use App\Services\Ai\AiProviders;
 use App\Services\Rag\AnswerService;
 use App\Services\Rag\PromptBuilder;
 use App\Services\Rag\RetrievedChunk;
@@ -23,6 +24,7 @@ class EvalRunner
         private AnswerService $answers,
         private Retriever $retriever,
         private EmbeddingProvider $embeddings,
+        private AiProviders $providers,
     ) {}
 
     /**
@@ -104,7 +106,8 @@ class EvalRunner
      */
     public function sweep(Workspace $workspace, array $cases, array $thresholds, ?array $documentIds): array
     {
-        $vectors = array_map(fn (EvalCase $case): array => $this->embeddings->embedQuery($case->question), $cases);
+        $embeddings = $this->providers->embeddings($workspace, $this->embeddings);
+        $vectors = array_map(fn (EvalCase $case): array => $embeddings->embedQuery($case->question), $cases);
         $rows = [];
 
         foreach ($thresholds as $threshold) {

@@ -16,11 +16,15 @@ class WidgetController extends Controller
      * the handoff line for questions the documents cannot answer. Works with
      * the widget's public key.
      *
-     * @response array{data: array{title: string, welcome: string, color: string, position: 'left'|'right', handoff: array{email: string|null, text: string}}}
+     * device_ai is true when the widget may let the visitor's browser write
+     * answers with its built-in AI (see POST /ask/device).
+     *
+     * @response array{data: array{title: string, welcome: string, color: string, position: 'left'|'right', handoff: array{email: string|null, text: string}, device_ai: bool}}
      */
     public function __invoke(CurrentWorkspace $current): JsonResponse
     {
-        $settings = WidgetSettings::for($current->require());
+        $workspace = $current->require();
+        $settings = WidgetSettings::for($workspace);
 
         return new JsonResponse(['data' => [
             'title' => $settings['title'],
@@ -28,6 +32,7 @@ class WidgetController extends Controller
             'color' => $settings['color'],
             'position' => $settings['position'],
             'handoff' => ['email' => $settings['handoff_email'], 'text' => $settings['handoff_text']],
+            'device_ai' => DeviceAskController::allowed($workspace),
         ]], 200, ['Cache-Control' => 'public, max-age=60']);
     }
 }

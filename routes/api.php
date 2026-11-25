@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AskController;
 use App\Http\Controllers\Api\AskStreamController;
 use App\Http\Controllers\Api\ChannelLinkController;
 use App\Http\Controllers\Api\ConversationController;
+use App\Http\Controllers\Api\DeviceAskController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\EvalController;
 use App\Http\Controllers\Api\WidgetController;
@@ -31,6 +32,8 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('ask', AskController::class)->name('ask');
         Route::match(['get', 'post'], 'ask/stream', AskStreamController::class)->name('ask.stream');
         Route::get('widget', WidgetController::class)->name('widget');
+        Route::post('ask/device', [DeviceAskController::class, 'prepare'])->name('ask.device');
+        Route::post('ask/device/complete', [DeviceAskController::class, 'complete'])->name('ask.device.complete');
     });
 
     Route::middleware(['api.key:live,service', 'api.workspace'])->group(function () {

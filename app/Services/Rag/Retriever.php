@@ -6,11 +6,12 @@ use App\Contracts\EmbeddingProvider;
 use App\Enums\DocumentStatus;
 use App\Models\Chunk;
 use App\Models\Workspace;
+use App\Services\Ai\AiProviders;
 use Illuminate\Support\Facades\DB;
 
 class Retriever
 {
-    public function __construct(private EmbeddingProvider $embeddings) {}
+    public function __construct(private EmbeddingProvider $embeddings, private AiProviders $providers) {}
 
     /**
      * Find the workspace's chunks closest to the question, best first.
@@ -24,7 +25,9 @@ class Retriever
             return [];
         }
 
-        return $this->search($workspace, $this->embeddings->embedQuery($question), $documentIds);
+        $embeddings = $this->providers->embeddings($workspace, $this->embeddings);
+
+        return $this->search($workspace, $embeddings->embedQuery($question), $documentIds);
     }
 
     /**
@@ -34,9 +37,9 @@ class Retriever
      * @param  list<int>|null  $documentIds
      * @return list<RetrievedChunk>
      */
-    public function search(Workspace $workspace, array $vector, ?array $documentIds = null, ?float $threshold = null): array
+    public function search(Workspace $workspace, array $vector, ?array $documentIds = null, ?float $threshold = null, ?int $topK = null): array
     {
-        $topK = max(1, (int) config('docchat.rag.top_k'));
+        $topK = max(1, $topK ?? (int) config('docchat.rag.top_k'));
         $threshold ??= (float) config('docchat.rag.similarity_threshold');
 
         $rows = DB::transaction(function () use ($workspace, $vector, $documentIds, $topK, $threshold) {
