@@ -1,10 +1,17 @@
 <?php
 
+use App\Http\Controllers\DocsController;
 use App\Http\Controllers\WidgetPreviewController;
 use App\Http\Controllers\WorkspaceInvitationController;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
+Route::view('pricing', 'site.pricing')->name('pricing');
+
+// User guide. /docs/api is the API reference (Scramble), so it is not a page here.
+Route::get('docs/{page?}', DocsController::class)
+    ->where('page', '^(?!api$)[a-z0-9-]+$')
+    ->name('docs.show');
 
 Route::get('invitations/{token}', [WorkspaceInvitationController::class, 'show'])->name('invitations.show');
 Route::post('invitations/{token}/accept', [WorkspaceInvitationController::class, 'accept'])
