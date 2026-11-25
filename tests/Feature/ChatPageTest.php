@@ -68,10 +68,21 @@ it('asks to upload a document when none is ready', function () {
         ->assertSee('Upload a document first');
 });
 
-it('forbids another user\'s conversation', function () {
+it('hides a conversation from another workspace', function () {
     $conversation = Conversation::factory()->for($this->user)->create();
 
     $this->actingAs(User::factory()->create())
+        ->get(route('chat.show', $conversation))
+        ->assertNotFound();
+});
+
+it('keeps chats private between members of the same workspace', function () {
+    $conversation = Conversation::factory()->for($this->user)->create();
+    $teammate = User::factory()->create();
+    $this->user->currentWorkspace()->members()->attach($teammate->id, ['role' => 'member']);
+    $teammate->switchWorkspace($this->user->currentWorkspace());
+
+    $this->actingAs($teammate)
         ->get(route('chat.show', $conversation))
         ->assertForbidden();
 });
@@ -196,7 +207,7 @@ it('lets the owner rename and delete a conversation', function () {
 it('cannot rename or delete another user\'s conversation', function () {
     $theirs = Conversation::factory()->create(['title' => 'Theirs']);
 
-    $this->actingAs($this->user)->get(route('chat.show', $theirs))->assertForbidden();
+    $this->actingAs($this->user)->get(route('chat.show', $theirs))->assertNotFound();
 
     // The component only ever loads conversations through the signed-in user.
     Livewire::actingAs($this->user)
@@ -204,5 +215,5 @@ it('cannot rename or delete another user\'s conversation', function () {
         ->call('rename', 'Hacked')
         ->call('deleteConversation');
 
-    expect($theirs->refresh()->title)->toBe('Theirs');
+    expect(Conversation::withoutGlobalScopes()->find($theirs->id)->title)->toBe('Theirs');
 });

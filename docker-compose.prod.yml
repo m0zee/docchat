@@ -48,6 +48,16 @@ services:
     stop_signal: SIGTERM
     stop_grace_period: 330s
 
+  # Runs scheduled tasks (pruning stale cached answers).
+  scheduler:
+    <<: *app
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *env
+      AUTORUN_ENABLED: "false"
+    healthcheck:
+      disable: true
+
   db:
     image: pgvector/pgvector:0.8.7-pg16
     environment:

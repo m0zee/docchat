@@ -1,14 +1,18 @@
 <?php
 
 use App\Enums\DocumentStatus;
+use App\Enums\ConversationChannel;
 use App\Enums\MessageRole;
 use App\Models\Chunk;
 use App\Models\Conversation;
 use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Services\Rag\AnswerService;
 use App\Support\ChatRateLimit;
+use App\Support\CurrentWorkspace;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -152,7 +156,7 @@ new #[Title('Chat')] class extends Component {
             return;
         }
 
-        $chunk = Chunk::query()->ownedBy($this->user())->find($chunkId);
+        $chunk = Chunk::query()->inWorkspace($this->workspace())->find($chunkId);
 
         if ($chunk !== null) {
             $this->expanded[$chunkId] = $chunk->content;
@@ -166,7 +170,7 @@ new #[Title('Chat')] class extends Component {
             return null;
         }
 
-        return $this->user()->conversations()->find($this->conversationId);
+        return $this->myConversations()->find($this->conversationId);
     }
 
     /**
@@ -184,7 +188,7 @@ new #[Title('Chat')] class extends Component {
     #[Computed]
     public function conversations(): Collection
     {
-        return $this->user()->conversations()->latest('updated_at')->latest('id')->limit(50)->get();
+        return $this->myConversations()->latest('updated_at')->latest('id')->limit(50)->get();
     }
 
     /**
@@ -193,7 +197,7 @@ new #[Title('Chat')] class extends Component {
     #[Computed]
     public function readyDocuments(): Collection
     {
-        return $this->user()->documents()
+        return Document::query()->inWorkspace($this->workspace())
             ->where('status', DocumentStatus::Ready)
             ->orderBy('title')
             ->get(['id', 'title']);
@@ -201,7 +205,7 @@ new #[Title('Chat')] class extends Component {
 
     private function startConversation(): Conversation
     {
-        $conversation = $this->user()->conversations()->create();
+        $conversation = Conversation::forChannel($this->workspace(), ConversationChannel::Web, user: $this->user());
         $conversation->documents()->sync($this->allowedDocumentIds($this->documentIds));
 
         $this->conversationId = $conversation->id;
@@ -213,7 +217,7 @@ new #[Title('Chat')] class extends Component {
     }
 
     /**
-     * Keep only ids of the user's own ready documents; never trust the browser.
+     * Keep only ids of ready documents in this workspace; never trust the browser.
      *
      * @param  array<int|string>  $ids
      * @return list<int>
@@ -226,12 +230,30 @@ new #[Title('Chat')] class extends Component {
             return [];
         }
 
-        return $this->user()->documents()
+        return Document::query()->inWorkspace($this->workspace())
             ->where('status', DocumentStatus::Ready)
             ->whereIn('id', $ids)
             ->pluck('id')
             ->map(fn ($id): int => (int) $id)
             ->all();
+    }
+
+    /**
+     * The signed-in member's own chats in the current workspace.
+     *
+     * @return Builder<Conversation>
+     */
+    private function myConversations(): Builder
+    {
+        return Conversation::query()
+            ->inWorkspace($this->workspace())
+            ->where('channel', ConversationChannel::Web->value)
+            ->where('user_id', $this->user()->id);
+    }
+
+    private function workspace(): Workspace
+    {
+        return app(CurrentWorkspace::class)->require();
     }
 
     private function user(): User
@@ -373,6 +395,9 @@ new #[Title('Chat')] class extends Component {
                                         {{ $message->usage_estimated ? '~' : '' }}{{ number_format($message->prompt_tokens + (int) $message->completion_tokens) }} {{ __('tokens') }} ·
                                     @endif
                                     {{ number_format(($message->latency_ms ?? 0) / 1000, 1) }} s
+                                    @if ($message->cache_hit)
+                                        · <span data-test="from-cache">{{ __('from cache') }}</span>
+                                    @endif
                                 </flux:text>
                             </div>
                         </div>

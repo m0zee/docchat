@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Enums\WorkspaceRole;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -20,6 +22,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property int $id
  * @property string $name
  * @property string $email
+ * @property int|null $current_workspace_id
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string|null $two_factor_secret
@@ -35,6 +38,18 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+
+    protected static function booted(): void
+    {
+        // Workspaces where this user is the only member go with them.
+        static::deleting(function (User $user): void {
+            Workspace::query()
+                ->whereHas('members', fn ($query) => $query->whereKey($user->id))
+                ->whereDoesntHave('members', fn ($query) => $query->whereKeyNot($user->id))
+                ->get()
+                ->each(fn (Workspace $workspace) => $workspace->delete());
+        });
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -62,18 +77,59 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
-     * @return HasMany<Document, $this>
-     */
-    public function documents(): HasMany
-    {
-        return $this->hasMany(Document::class);
-    }
-
-    /**
+     * Conversations this user started, in any workspace.
+     *
      * @return HasMany<Conversation, $this>
      */
     public function conversations(): HasMany
     {
         return $this->hasMany(Conversation::class);
+    }
+
+    /**
+     * @return BelongsToMany<Workspace, $this>
+     */
+    public function workspaces(): BelongsToMany
+    {
+        return $this->belongsToMany(Workspace::class, 'workspace_user')->withPivot('role')->withTimestamps()->orderBy('workspaces.name');
+    }
+
+    /**
+     * The workspace the user is working in: the one they picked, or else the
+     * first one they belong to. Null only for a user with no workspace.
+     */
+    public function currentWorkspace(): ?Workspace
+    {
+        if ($this->current_workspace_id !== null) {
+            $current = $this->workspaces()->whereKey($this->current_workspace_id)->first();
+
+            if ($current instanceof Workspace) {
+                return $current;
+            }
+        }
+
+        $fallback = $this->workspaces()->reorder('workspaces.id')->first();
+
+        if ($fallback instanceof Workspace && $this->current_workspace_id !== $fallback->id) {
+            $this->forceFill(['current_workspace_id' => $fallback->id])->save();
+        }
+
+        return $fallback;
+    }
+
+    public function switchWorkspace(Workspace $workspace): bool
+    {
+        if (! $workspace->hasMember($this)) {
+            return false;
+        }
+
+        $this->forceFill(['current_workspace_id' => $workspace->id])->save();
+
+        return true;
+    }
+
+    public function roleIn(Workspace $workspace): ?WorkspaceRole
+    {
+        return $workspace->roleOf($this);
     }
 }

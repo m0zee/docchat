@@ -3,9 +3,11 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use WeakMap;
 
 /**
  * @extends Factory<User>
@@ -16,6 +18,11 @@ class UserFactory extends Factory
      * The current password being used by the factory.
      */
     protected static ?string $password;
+
+    /**
+     * @var WeakMap<User, bool>|null
+     */
+    private static ?WeakMap $skipWorkspace = null;
 
     /**
      * Define the model's default state.
@@ -36,6 +43,37 @@ class UserFactory extends Factory
             'two_factor_confirmed_at' => null,
             /* @end-chisel-2fa */
         ];
+    }
+
+    /**
+     * Every user gets a personal workspace, as on registration.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (User $user): void {
+            if (isset(self::skipWorkspace()[$user])) {
+                return;
+            }
+
+            Workspace::createFor($user);
+        });
+    }
+
+    public function withoutWorkspace(): static
+    {
+        return $this->afterMaking(function (User $user): void {
+            self::skipWorkspace()[$user] = true;
+        });
+    }
+
+    /**
+     * Users made by withoutWorkspace(). A WeakMap, so it never becomes a column.
+     *
+     * @return WeakMap<User, bool>
+     */
+    private static function skipWorkspace(): WeakMap
+    {
+        return self::$skipWorkspace ??= new WeakMap;
     }
 
     /**

@@ -3,6 +3,8 @@
 use App\Enums\DocumentStatus;
 use App\Models\Document;
 use App\Models\User;
+use App\Models\Workspace;
+use App\Support\CurrentWorkspace;
 use App\Rules\DocumentUpload;
 use App\Services\Documents\DocumentService;
 use App\Support\FileSize;
@@ -38,8 +40,11 @@ new #[Title('Documents')] class extends Component {
             return;
         }
 
+        $workspace = $this->workspace();
+        Gate::authorize('create', [Document::class, $workspace]);
+
         try {
-            $service->createFromUpload($this->file, $user);
+            $service->createFromUpload($this->file, $workspace, $user);
         } catch (Throwable $exception) {
             report($exception);
             $this->addError('file', __('The document could not be uploaded. Please try again.'));
@@ -54,7 +59,7 @@ new #[Title('Documents')] class extends Component {
 
     public function delete(int $documentId, DocumentService $service): void
     {
-        $document = Document::findOrFail($documentId);
+        $document = Document::query()->inWorkspace($this->workspace())->findOrFail($documentId);
 
         Gate::authorize('delete', $document);
 
@@ -69,13 +74,12 @@ new #[Title('Documents')] class extends Component {
     #[Computed]
     public function documents(): Collection
     {
-        $user = Auth::user();
+        return Document::query()->inWorkspace($this->workspace())->withCount('chunks')->latest()->get();
+    }
 
-        if (! $user instanceof User) {
-            return new Collection();
-        }
-
-        return $user->documents()->withCount('chunks')->latest()->get();
+    private function workspace(): Workspace
+    {
+        return app(CurrentWorkspace::class)->require();
     }
 
     #[Computed]
@@ -182,7 +186,12 @@ new #[Title('Documents')] class extends Component {
                             <flux:table.row :key="$document->id">
                                 <flux:table.cell variant="strong" class="whitespace-normal">
                                     <div>{{ $document->title }}</div>
-                                    <div class="text-xs font-normal text-zinc-500">{{ $document->original_filename }}</div>
+                                    <div class="text-xs font-normal text-zinc-500">
+                                        {{ $document->original_filename }}
+                                        @if ($document->source !== \App\Enums\DocumentSource::Upload)
+                                            <span class="ms-1 rounded bg-zinc-100 px-1.5 py-0.5 dark:bg-zinc-800" data-test="document-source">{{ $document->source->label() }}</span>
+                                        @endif
+                                    </div>
 
                                     @if ($document->status === DocumentStatus::Failed && $document->error)
                                         <div class="mt-1 text-xs font-normal text-red-600 dark:text-red-400">

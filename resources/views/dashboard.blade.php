@@ -1,18 +1,20 @@
 @php
     $user = auth()->user();
+    $workspace = app(\App\Support\CurrentWorkspace::class)->require();
+    $myConversations = \App\Models\Conversation::query()->inWorkspace($workspace)->where('channel', 'web')->where('user_id', $user->id);
     $stats = [
-        ['label' => __('Ready documents'), 'value' => $user->documents()->where('status', \App\Enums\DocumentStatus::Ready)->count(), 'icon' => 'document-text'],
-        ['label' => __('Chunks indexed'), 'value' => \App\Models\Chunk::query()->ownedBy($user)->count(), 'icon' => 'squares-2x2'],
-        ['label' => __('Conversations'), 'value' => $user->conversations()->count(), 'icon' => 'chat-bubble-left-right'],
+        ['label' => __('Ready documents'), 'value' => \App\Models\Document::query()->inWorkspace($workspace)->where('status', \App\Enums\DocumentStatus::Ready)->count(), 'icon' => 'document-text'],
+        ['label' => __('Chunks indexed'), 'value' => \App\Models\Chunk::query()->inWorkspace($workspace)->count(), 'icon' => 'squares-2x2'],
+        ['label' => __('Your conversations'), 'value' => (clone $myConversations)->count(), 'icon' => 'chat-bubble-left-right'],
     ];
-    $recent = $user->conversations()->latest('updated_at')->limit(5)->get();
+    $recent = (clone $myConversations)->latest('updated_at')->limit(5)->get();
 @endphp
 
 <x-layouts::app :title="__('Dashboard')">
     <div class="flex w-full max-w-5xl flex-col gap-8">
         <div>
             <flux:heading size="xl">{{ __('Welcome, :name', ['name' => $user->name]) }}</flux:heading>
-            <flux:subheading>{{ __('Upload documents, then ask questions about them in Chat.') }}</flux:subheading>
+            <flux:subheading>{{ __(':workspace · Upload documents, then ask questions about them in Chat.', ['workspace' => $workspace->name]) }}</flux:subheading>
         </div>
 
         <div class="grid gap-4 md:grid-cols-3">

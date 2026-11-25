@@ -12,6 +12,9 @@ class FakeEmbeddingProvider implements EmbeddingProvider
     /** @var list<string> */
     public array $queries = [];
 
+    /** Number of embedDocuments() calls. */
+    public int $documentCalls = 0;
+
     /**
      * @param  array<int, float>|null  $queryVector
      */
@@ -33,6 +36,8 @@ class FakeEmbeddingProvider implements EmbeddingProvider
 
     public function embedDocuments(array $texts, string $title = ''): array
     {
+        $this->documentCalls++;
+
         return array_map(fn (): array => self::withSimilarity(1.0), $texts);
     }
 

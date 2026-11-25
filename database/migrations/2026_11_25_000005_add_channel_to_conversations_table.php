@@ -1,0 +1,26 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('conversations', function (Blueprint $table) {
+            $table->string('channel', 20)->default('web')->after('user_id');
+            $table->string('external_id')->nullable()->after('channel');
+
+            $table->unique(['workspace_id', 'channel', 'external_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('conversations', function (Blueprint $table) {
+            $table->dropUnique(['workspace_id', 'channel', 'external_id']);
+            $table->dropColumn(['channel', 'external_id']);
+        });
+    }
+};

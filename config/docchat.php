@@ -38,10 +38,33 @@ return [
         ],
     ],
 
+    'api' => [
+        'rate_limit_per_minute' => (int) env('DOCCHAT_API_RATE_LIMIT_PER_MINUTE', 60),
+        'public_rate_limit_per_minute' => (int) env('DOCCHAT_API_PUBLIC_RATE_LIMIT_PER_MINUTE', 10),
+    ],
+
+    // Owner-only pages in Workspace settings: route name => label.
+    'workspace_nav' => [
+        'workspace.members' => 'Members',
+        'workspace.api-keys' => 'API keys',
+        'workspace.webhooks' => 'Webhooks',
+        'workspace.usage' => 'Usage',
+    ],
+
     'rag' => [
         'top_k' => (int) env('DOCCHAT_RAG_TOP_K', 5),
         'similarity_threshold' => (float) env('DOCCHAT_RAG_SIMILARITY_THRESHOLD', 0.5),
         'history_messages' => (int) env('DOCCHAT_RAG_HISTORY_MESSAGES', 4),
+    ],
+
+    // Token-saving caches. Answers are cached per workspace for the first
+    // question of a conversation and dropped when documents change.
+    'cache' => [
+        'answers' => (bool) env('DOCCHAT_ANSWER_CACHE', true),
+        'semantic_threshold' => (float) env('DOCCHAT_ANSWER_CACHE_SIMILARITY', 0.95),
+        'ttl_days' => (int) env('DOCCHAT_ANSWER_CACHE_TTL_DAYS', 7),
+        'query_embeddings' => (bool) env('DOCCHAT_QUERY_EMBEDDING_CACHE', true),
+        'embedding_ttl_days' => (int) env('DOCCHAT_QUERY_EMBEDDING_CACHE_TTL_DAYS', 30),
     ],
 
     'evals' => [

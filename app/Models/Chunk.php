@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Database\Factories\ChunkFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\AsVector;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property-read Document $document
  */
 #[Fillable([
+    'workspace_id',
     'document_id',
     'page_number',
     'chunk_index',
@@ -34,7 +35,17 @@ use Illuminate\Support\Carbon;
 class Chunk extends Model
 {
     /** @use HasFactory<ChunkFactory> */
-    use HasFactory;
+    use BelongsToWorkspace, HasFactory;
+
+    /**
+     * A chunk always lives in its document's workspace.
+     */
+    protected function workspaceIdForNewRow(): ?int
+    {
+        $id = Document::query()->withoutGlobalScopes()->whereKey($this->document_id)->value('workspace_id');
+
+        return $id === null ? null : (int) $id;
+    }
 
     /**
      * @return array<string, string>
@@ -55,17 +66,5 @@ class Chunk extends Model
     public function document(): BelongsTo
     {
         return $this->belongsTo(Document::class);
-    }
-
-    /**
-     * @param  Builder<Chunk>  $query
-     * @return Builder<Chunk>
-     */
-    public function scopeOwnedBy(Builder $query, User $user): Builder
-    {
-        return $query->whereHas(
-            'document',
-            fn (Builder $documentQuery): Builder => $documentQuery->where('user_id', $user->id),
-        );
     }
 }
