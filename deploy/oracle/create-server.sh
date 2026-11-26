@@ -79,8 +79,15 @@ if [ -z "$INST" ] || [ "$INST" = "null" ]; then
   echo "Image: $IMAGE"
   curl -fsSL "$CLOUD_INIT_URL" -o "$WORK/cloud-init.sh"
 
-  for AD in $(oci iam availability-domain list -c "$C" --query 'data[].name' --raw-output | tr -d '[]",' ); do
-    echo "Launching in $AD ..."
+  ADS=$(oci iam availability-domain list -c "$C" --query 'data[].name' --raw-output | tr -d '[]",')
+  # Free Arm capacity comes and goes. Oracle answers "Out of host capacity" or
+  # "Too many requests" when there's none; keep retrying for a while.
+  DEADLINE=$(( $(date +%s) + ${DOCCHAT_RETRY_MINUTES:-30} * 60 ))
+  ATTEMPT=0
+  INST=""
+  while [ -z "$INST" ]; do
+  ATTEMPT=$((ATTEMPT + 1))
+  for AD in $ADS; do
     if INST=$(oci compute instance launch -c "$C" --availability-domain "$AD" --display-name "$NAME" \
         --shape VM.Standard.A1.Flex --shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEMORY_GB}" \
         --image-id "$IMAGE" --subnet-id "$SUBNET" --assign-public-ip true \
@@ -89,12 +96,16 @@ if [ -z "$INST" ] || [ "$INST" = "null" ]; then
       break
     fi
     INST=""
-    grep -o '"message": "[^"]*"' "$WORK/launch-error.txt" || cat "$WORK/launch-error.txt"
+    echo "  attempt $ATTEMPT: $(grep -o '"message": "[^"]*"' "$WORK/launch-error.txt" || head -c 300 "$WORK/launch-error.txt")"
   done
   if [ -z "$INST" ]; then
-    echo "Could not create the server (often 'Out of host capacity'). Wait a while and run this again."
-    exit 1
+    if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+      echo "Could not create the server yet (no free Arm capacity). Run this again later."
+      exit 1
+    fi
+    sleep "${DOCCHAT_RETRY_SECONDS:-60}"
   fi
+  done
 fi
 
 IP=$(oci compute instance list-vnics --instance-id "$INST" --query 'data[0]."public-ip"' --raw-output)
