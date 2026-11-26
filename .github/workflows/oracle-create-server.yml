@@ -1,0 +1,83 @@
+name: oracle-create-server
+
+# Keeps trying to create the free Oracle A1 server while Oracle says
+# "Out of host capacity", without a laptop or Cloud Shell open.
+# GitHub runs schedules at most every 5 minutes (often later); each run tries
+# about once a minute for 4 minutes, so attempts are roughly continuous.
+# Once the server exists, each run just prints it and stops; disable this
+# workflow then (Actions > oracle-create-server > ... > Disable workflow).
+#
+# Setup: one repository secret, ORACLE_SETTINGS (Settings > Secrets and
+# variables > Actions). Make its text in Oracle Cloud Shell with
+#   bash deploy/oracle/github-settings.sh      (or curl it from the repo)
+# It holds user=, fingerprint=, tenancy=, region= and ssh_public_key= lines,
+# then the API signing key's PEM block.
+# Without them the job does nothing.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-create-server
+  cancel-in-progress: false
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORACLE_SETTINGS: ${{ secrets.ORACLE_SETTINGS }}
+      DOCCHAT_RETRY_MINUTES: "4"
+      DOCCHAT_CLOUD_INIT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/deploy/oracle/cloud-init.sh
+      SUPPRESS_LABEL_WARNING: "True"
+    steps:
+      - name: Check settings
+        id: check
+        run: |
+          if [ -z "$ORACLE_SETTINGS" ]; then
+            echo "ORACLE_SETTINGS is not set; nothing to do."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'true'
+
+      - name: Install the OCI CLI and sign in
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          pipx install oci-cli
+          install -m 700 -d ~/.oci
+          printf '%s\n' "$ORACLE_SETTINGS" | tr -d '\r' > ~/.oci/settings
+          get() { sed -n "s/^$1=//p" ~/.oci/settings | head -1; }
+          sed -n '/-----BEGIN/,/-----END/p' ~/.oci/settings > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          {
+            echo "[DEFAULT]"
+            echo "user=$(get user)"
+            echo "fingerprint=$(get fingerprint)"
+            echo "tenancy=$(get tenancy)"
+            echo "region=$(get region)"
+            echo "key_file=$HOME/.oci/key.pem"
+          } > ~/.oci/config
+          chmod 600 ~/.oci/config
+          echo "OCI_TENANCY=$(get tenancy)" >> "$GITHUB_ENV"
+          echo "DOCCHAT_SSH_PUBLIC_KEY=$(get ssh_public_key)" >> "$GITHUB_ENV"
+          oci iam region-subscription list --query 'data[]."region-name"' --raw-output
+
+      - name: Create the server (or report it)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          set +e
+          bash deploy/oracle/create-server.sh
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "No capacity this round; the next scheduled run tries again."
+          fi
+          exit 0

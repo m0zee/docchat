@@ -1,0 +1,59 @@
+name: deploy
+
+# Continuous deployment to the Oracle Cloud server (deploy.md, "Automatic deploys").
+# Runs after the tests workflow passes on main, or by hand from the Actions tab.
+# Needs two repository secrets (Settings > Secrets and variables > Actions):
+#   DEPLOY_HOST     the server's public IP
+#   DEPLOY_SSH_KEY  a private SSH key whose public half is in the server's
+#                   ~/.ssh/authorized_keys for the ubuntu user
+# Without them the job is skipped, so forks and CI-only setups stay green.
+
+on:
+  workflow_run:
+    workflows: [tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Check secrets
+        id: check
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "DEPLOY_HOST or DEPLOY_SSH_KEY is not set; skipping the deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up SSH
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          ssh-keyscan -T 15 "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Pull, rebuild and restart on the server
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "ubuntu@$DEPLOY_HOST" \
+            "cd ~/docchat && sh deploy/oracle/update.sh '$DEPLOY_SHA'"

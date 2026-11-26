@@ -4,6 +4,18 @@ This guide puts DocChat on one free Oracle Cloud VM with Docker Compose: the app
 
 What you get: `https://<your-ip>.sslip.io` (or your own domain) serving DocChat, with uploads, the database and certificates on Docker volumes that survive restarts and updates.
 
+## Quick path: one command in Oracle Cloud Shell
+
+After signing up (step 1, first bullet), open **Cloud Shell** (the `>_` icon at the top of the Oracle console) and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/m0zee/docchat/main/deploy/oracle/create-server.sh | bash
+```
+
+It does steps 1 to 5 for you: creates the network with ports 22, 80 and 443 open, an SSH key in Cloud Shell (`~/.ssh/docchat`), and the Always Free A1 VM, which then installs Docker, clones DocChat, writes `.env` with random secrets and `<ip>.sslip.io`, and starts the stack (`deploy/oracle/cloud-init.sh`). It prints the IP and URL; the first build takes about 15 to 25 minutes. If Oracle has no free Arm capacity ("Out of host capacity" or "Too many requests"), it keeps retrying for 30 minutes (`DOCCHAT_RETRY_MINUTES` to change). Add the AI keys to `~/docchat/.env` afterwards (step 4) and run `docker compose -f docker-compose.prod.yml up -d`.
+
+The manual steps below do the same thing by hand.
+
 ## 1. Create the server
 
 1. Sign up at [cloud.oracle.com](https://cloud.oracle.com). **Choose your home region carefully: you can't change it later**, and free Arm capacity varies by region. Oracle asks for a card to verify your identity; Always Free resources aren't charged.
@@ -168,7 +180,23 @@ Neither was run on a real Oracle VM while building DocChat: the build sandbox co
 
 Uploaded files live in the `storage` volume. To back them up too: `docker run --rm -v docchat_storage:/s -v "$PWD":/b alpine tar czf /b/storage-$(date +%F).tgz -C /s app`.
 
-## 8. Things to know about the free tier
+## 8. Automatic deploys (CI/CD)
+
+`.github/workflows/deploy.yml` deploys every push to `main` once the `tests` workflow passes (and can be run by hand from the Actions tab). It SSHes into the server and runs `deploy/oracle/update.sh`, which checks out that commit, rebuilds the image and restarts the containers; migrations run when the app container starts. `.env` and the volumes are left alone.
+
+One-time setup:
+
+1. Make a key just for deploys (in Cloud Shell or anywhere with SSH to the server):
+   ```bash
+   ssh-keygen -t rsa -b 4096 -N "" -C github-deploy -f ~/.ssh/docchat-deploy
+   cat ~/.ssh/docchat-deploy.pub | ssh -i ~/.ssh/docchat ubuntu@<public-ip> 'cat >> ~/.ssh/authorized_keys'
+   cat ~/.ssh/docchat-deploy   # the private key, for the secret below
+   ```
+2. In GitHub: **Settings → Secrets and variables → Actions → New repository secret**: `DEPLOY_HOST` = the public IP, `DEPLOY_SSH_KEY` = the whole private key, including the BEGIN and END lines.
+
+Until both secrets exist the deploy job is skipped, so CI stays green.
+
+## 9. Things to know about the free tier
 
 - **Idle reclaim.** Oracle may reclaim an Always Free VM whose CPU, network and memory all stay under 20% for 7 days. A demo nobody uses can trip this. Upgrading the account to Pay As You Go keeps Always Free resources free and, per Oracle's community reports, exempts them from idle reclaim, but it needs a card on file. Check Oracle's current Always Free page before relying on this.
 - **API limits are app-wide.** Groq's free tier allows about 1,000 requests and 8,000 tokens per minute for the whole app, which is roughly one question per minute at full context. DocChat shows "The model is busy, try again in a minute" when Groq says no.
