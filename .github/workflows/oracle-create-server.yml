@@ -2,8 +2,9 @@ name: oracle-create-server
 
 # Keeps trying to create the free Oracle A1 server while Oracle says
 # "Out of host capacity", without a laptop or Cloud Shell open.
-# GitHub runs schedules at most every 5 minutes (often later); each run tries
-# about once a minute for 4 minutes, so attempts are roughly continuous.
+# Each run tries about once a minute for 50 minutes, then starts the next run
+# itself, so attempts are continuous. (GitHub's own schedule is unreliable on
+# a new repo: it ran zero times in the first hour, so it is only a backup.)
 # When the server exists, it opens an issue titled "Oracle server is ready"
 # (GitHub emails the repo owner about it) and switches its own schedule off.
 #
@@ -32,10 +33,10 @@ concurrency:
 jobs:
   create:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     env:
       ORACLE_SETTINGS: ${{ secrets.ORACLE_SETTINGS }}
-      DOCCHAT_RETRY_MINUTES: "4"
+      DOCCHAT_RETRY_MINUTES: "50"
       DOCCHAT_CLOUD_INIT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/deploy/oracle/cloud-init.sh
       SUPPRESS_LABEL_WARNING: "True"
     steps:
@@ -107,3 +108,9 @@ jobs:
           This workflow has switched its schedule off. Next: add the AI keys to ~/docchat/.env, the DEPLOY_HOST and DEPLOY_SSH_KEY secrets for automatic deploys (deploy.md section 8), and delete the GitHub API key in Oracle (Profile > API keys)."
           fi
           gh workflow disable oracle-create-server.yml --repo "$GITHUB_REPOSITORY"
+
+      - name: Start the next round
+        if: steps.check.outputs.ready == 'true' && steps.create.outputs.ready != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run oracle-create-server.yml --repo "$GITHUB_REPOSITORY" --ref main
