@@ -19,7 +19,12 @@ C="${OCI_TENANCY:-$(oci iam availability-domain list --query 'data[0]."compartme
 echo "Compartment (tenancy root): $C"
 
 # SSH key, kept in Cloud Shell's home folder (RSA: Cloud Shell runs in FIPS mode, which refuses ed25519).
-if [ ! -f "$HOME/.ssh/docchat" ]; then
+# DOCCHAT_SSH_PUBLIC_KEY (for runs outside Cloud Shell, like the GitHub
+# workflow) puts that public key on the server instead.
+if [ -n "${DOCCHAT_SSH_PUBLIC_KEY:-}" ]; then
+  mkdir -p "$HOME/.ssh"
+  printf '%s\n' "$DOCCHAT_SSH_PUBLIC_KEY" > "$HOME/.ssh/docchat.pub"
+elif [ ! -f "$HOME/.ssh/docchat" ]; then
   mkdir -p "$HOME/.ssh"
   ssh-keygen -t rsa -b 4096 -N "" -C docchat -f "$HOME/.ssh/docchat" >/dev/null
 fi

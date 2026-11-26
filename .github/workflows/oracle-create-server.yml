@@ -1,0 +1,87 @@
+name: oracle-create-server
+
+# Keeps trying to create the free Oracle A1 server while Oracle says
+# "Out of host capacity", without a laptop or Cloud Shell open.
+# GitHub runs schedules at most every 5 minutes (often later); each run tries
+# about once a minute for 4 minutes, so attempts are roughly continuous.
+# Once the server exists, each run just prints it and stops; disable this
+# workflow then (Actions > oracle-create-server > ... > Disable workflow).
+#
+# Setup (Settings > Secrets and variables > Actions):
+#   secret   OCI_PRIVATE_KEY        an Oracle API signing key (PEM) for your user
+#   variable OCI_USER_OCID          ocid1.user...
+#   variable OCI_TENANCY_OCID       ocid1.tenancy...
+#   variable OCI_FINGERPRINT        the API key's fingerprint
+#   variable OCI_REGION             for example me-dubai-1
+#   variable DOCCHAT_SSH_PUBLIC_KEY the public SSH key to put on the server
+# Without them the job does nothing.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-create-server
+  cancel-in-progress: false
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_USER_OCID: ${{ vars.OCI_USER_OCID }}
+      OCI_FINGERPRINT: ${{ vars.OCI_FINGERPRINT }}
+      OCI_REGION: ${{ vars.OCI_REGION }}
+      OCI_TENANCY: ${{ vars.OCI_TENANCY_OCID }}
+      DOCCHAT_SSH_PUBLIC_KEY: ${{ vars.DOCCHAT_SSH_PUBLIC_KEY }}
+      DOCCHAT_RETRY_MINUTES: "4"
+      DOCCHAT_CLOUD_INIT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/deploy/oracle/cloud-init.sh
+      SUPPRESS_LABEL_WARNING: "True"
+    steps:
+      - name: Check settings
+        id: check
+        run: |
+          if [ -z "$OCI_PRIVATE_KEY" ] || [ -z "$OCI_USER_OCID" ] || [ -z "$OCI_TENANCY" ] \
+             || [ -z "$OCI_FINGERPRINT" ] || [ -z "$OCI_REGION" ] || [ -z "$DOCCHAT_SSH_PUBLIC_KEY" ]; then
+            echo "Oracle settings are missing; nothing to do."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'true'
+
+      - name: Install the OCI CLI
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          pipx install oci-cli
+          install -m 700 -d ~/.oci
+          printf '%s\n' "$OCI_PRIVATE_KEY" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=$OCI_USER_OCID
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY
+          region=$OCI_REGION
+          key_file=$HOME/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config
+          oci iam region-subscription list --query 'data[]."region-name"' --raw-output
+
+      - name: Create the server (or report it)
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          set +e
+          bash deploy/oracle/create-server.sh
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "No capacity this round; the next scheduled run tries again."
+          fi
+          exit 0
