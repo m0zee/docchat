@@ -7,13 +7,11 @@ name: oracle-create-server
 # Once the server exists, each run just prints it and stops; disable this
 # workflow then (Actions > oracle-create-server > ... > Disable workflow).
 #
-# Setup (Settings > Secrets and variables > Actions):
-#   secret   OCI_PRIVATE_KEY        an Oracle API signing key (PEM) for your user
-#   variable OCI_USER_OCID          ocid1.user...
-#   variable OCI_TENANCY_OCID       ocid1.tenancy...
-#   variable OCI_FINGERPRINT        the API key's fingerprint
-#   variable OCI_REGION             for example me-dubai-1
-#   variable DOCCHAT_SSH_PUBLIC_KEY the public SSH key to put on the server
+# Setup: one repository secret, ORACLE_SETTINGS (Settings > Secrets and
+# variables > Actions). Make its text in Oracle Cloud Shell with
+#   bash deploy/oracle/github-settings.sh      (or curl it from the repo)
+# It holds user=, fingerprint=, tenancy=, region= and ssh_public_key= lines,
+# then the API signing key's PEM block.
 # Without them the job does nothing.
 
 on:
@@ -33,12 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-      OCI_USER_OCID: ${{ vars.OCI_USER_OCID }}
-      OCI_FINGERPRINT: ${{ vars.OCI_FINGERPRINT }}
-      OCI_REGION: ${{ vars.OCI_REGION }}
-      OCI_TENANCY: ${{ vars.OCI_TENANCY_OCID }}
-      DOCCHAT_SSH_PUBLIC_KEY: ${{ vars.DOCCHAT_SSH_PUBLIC_KEY }}
+      ORACLE_SETTINGS: ${{ secrets.ORACLE_SETTINGS }}
       DOCCHAT_RETRY_MINUTES: "4"
       DOCCHAT_CLOUD_INIT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/deploy/oracle/cloud-init.sh
       SUPPRESS_LABEL_WARNING: "True"
@@ -46,9 +39,8 @@ jobs:
       - name: Check settings
         id: check
         run: |
-          if [ -z "$OCI_PRIVATE_KEY" ] || [ -z "$OCI_USER_OCID" ] || [ -z "$OCI_TENANCY" ] \
-             || [ -z "$OCI_FINGERPRINT" ] || [ -z "$OCI_REGION" ] || [ -z "$DOCCHAT_SSH_PUBLIC_KEY" ]; then
-            echo "Oracle settings are missing; nothing to do."
+          if [ -z "$ORACLE_SETTINGS" ]; then
+            echo "ORACLE_SETTINGS is not set; nothing to do."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -57,22 +49,26 @@ jobs:
       - uses: actions/checkout@v4
         if: steps.check.outputs.ready == 'true'
 
-      - name: Install the OCI CLI
+      - name: Install the OCI CLI and sign in
         if: steps.check.outputs.ready == 'true'
         run: |
           pipx install oci-cli
           install -m 700 -d ~/.oci
-          printf '%s\n' "$OCI_PRIVATE_KEY" > ~/.oci/key.pem
+          printf '%s\n' "$ORACLE_SETTINGS" | tr -d '\r' > ~/.oci/settings
+          get() { sed -n "s/^$1=//p" ~/.oci/settings | head -1; }
+          sed -n '/-----BEGIN/,/-----END/p' ~/.oci/settings > ~/.oci/key.pem
           chmod 600 ~/.oci/key.pem
-          cat > ~/.oci/config <<EOF
-          [DEFAULT]
-          user=$OCI_USER_OCID
-          fingerprint=$OCI_FINGERPRINT
-          tenancy=$OCI_TENANCY
-          region=$OCI_REGION
-          key_file=$HOME/.oci/key.pem
-          EOF
+          {
+            echo "[DEFAULT]"
+            echo "user=$(get user)"
+            echo "fingerprint=$(get fingerprint)"
+            echo "tenancy=$(get tenancy)"
+            echo "region=$(get region)"
+            echo "key_file=$HOME/.oci/key.pem"
+          } > ~/.oci/config
           chmod 600 ~/.oci/config
+          echo "OCI_TENANCY=$(get tenancy)" >> "$GITHUB_ENV"
+          echo "DOCCHAT_SSH_PUBLIC_KEY=$(get ssh_public_key)" >> "$GITHUB_ENV"
           oci iam region-subscription list --query 'data[]."region-name"' --raw-output
 
       - name: Create the server (or report it)
