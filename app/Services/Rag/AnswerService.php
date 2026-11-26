@@ -307,8 +307,18 @@ class AnswerService
      */
     public static function searchText(string $question, Collection $history): string
     {
-        $previous = $history
-            ->filter(fn (Message $message): bool => $message->role === MessageRole::User && trim($message->content) !== '')
+        $messages = $history->values();
+
+        // A question that found nothing (often misheard on a call) would only
+        // pull the search off course, so it is left out.
+        $previous = $messages
+            ->filter(function (Message $message, int $index) use ($messages): bool {
+                $reply = $messages->get($index + 1);
+
+                return $message->role === MessageRole::User && trim($message->content) !== ''
+                    && ! ($reply instanceof Message && $reply->role === MessageRole::Assistant
+                        && ($reply->content === self::NOT_FOUND || EvalRunner::isRefusal($reply->content)));
+            })
             ->take(-self::SEARCH_HISTORY_QUESTIONS)
             ->map(fn (Message $message): string => trim($message->content))
             ->all();

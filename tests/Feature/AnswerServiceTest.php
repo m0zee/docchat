@@ -129,6 +129,17 @@ it('keeps only the last two earlier questions in the search text', function () {
         ->and(AnswerService::searchText('Only?', collect()))->toBe('Only?');
 });
 
+it('leaves questions that found nothing out of the search text', function () {
+    $history = collect([
+        [MessageRole::User, 'Freelancer tax 2026?'],
+        [MessageRole::Assistant, 'It is 15% [1].'],
+        [MessageRole::User, 'What about the attacks?'],
+        [MessageRole::Assistant, "I don't know based on your documents."],
+    ])->map(fn (array $m) => new Message(['role' => $m[0], 'content' => $m[1]]));
+
+    expect(AnswerService::searchText('And exporters?', $history))->toBe("Freelancer tax 2026?\nAnd exporters?");
+});
+
 it('keeps the partial answer and a busy error when the model is rate limited mid-stream', function () {
     addChunk($this->document, 0.9);
     useChat(new FakeChatProvider(['Partial answer [1]'], throwAfter: new ChatRateLimitedException('429')));
