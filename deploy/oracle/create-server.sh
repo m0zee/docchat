@@ -18,10 +18,10 @@ mkdir -p "$WORK"
 C="${OCI_TENANCY:-$(oci iam availability-domain list --query 'data[0]."compartment-id"' --raw-output)}"
 echo "Compartment (tenancy root): $C"
 
-# SSH key, kept in Cloud Shell's home folder.
+# SSH key, kept in Cloud Shell's home folder (RSA: Cloud Shell runs in FIPS mode, which refuses ed25519).
 if [ ! -f "$HOME/.ssh/docchat" ]; then
   mkdir -p "$HOME/.ssh"
-  ssh-keygen -t ed25519 -N "" -C docchat -f "$HOME/.ssh/docchat" >/dev/null
+  ssh-keygen -t rsa -b 4096 -N "" -C docchat -f "$HOME/.ssh/docchat" >/dev/null
 fi
 
 q() { oci "$@" 2>/dev/null || true; }
