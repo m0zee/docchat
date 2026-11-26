@@ -6,7 +6,9 @@ name: oracle-create-server
 # itself, so attempts are continuous. (GitHub's own schedule is unreliable on
 # a new repo: it ran zero times in the first hour, so it is only a backup.)
 # When the server exists, it opens an issue titled "Oracle server is ready"
-# (GitHub emails the repo owner about it) and switches its own schedule off.
+# (GitHub emails the repo owner about it). If Oracle only had room for the
+# smaller size, it keeps trying to resize it up; once the server is full size
+# it switches itself off.
 #
 # Setup: one repository secret, ORACLE_SETTINGS (Settings > Secrets and
 # variables > Actions). Make its text in Oracle Cloud Shell with
@@ -33,10 +35,12 @@ concurrency:
 jobs:
   create:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 80
     env:
       ORACLE_SETTINGS: ${{ secrets.ORACLE_SETTINGS }}
       DOCCHAT_RETRY_MINUTES: "50"
+      # If Oracle only had room for the smaller size, keep resizing it up.
+      DOCCHAT_RESIZE: "1"
       DOCCHAT_CLOUD_INIT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/deploy/oracle/cloud-init.sh
       SUPPRESS_LABEL_WARNING: "True"
     steps:
@@ -86,31 +90,45 @@ jobs:
             echo "No capacity this round; the next scheduled run tries again."
             exit 0
           fi
+          get() { sed -n "s/^$1=//p" "$HOME/docchat-oci/server.txt"; }
           echo "ready=true" >> "$GITHUB_OUTPUT"
-          echo "ip=$(sed -n 's/^ip=//p' "$HOME/docchat-oci/server.txt")" >> "$GITHUB_OUTPUT"
+          echo "ip=$(get ip)" >> "$GITHUB_OUTPUT"
+          echo "size=$(get ocpus) OCPU / $(get memory_gb) GB" >> "$GITHUB_OUTPUT"
+          echo "resized=$(get resized)" >> "$GITHUB_OUTPUT"
+          [ "$(get ocpus)" -ge 2 ] && echo "full=true" >> "$GITHUB_OUTPUT" || true
 
       - name: Tell the owner and stop retrying
         if: steps.create.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           IP: ${{ steps.create.outputs.ip }}
+          SIZE: ${{ steps.create.outputs.size }}
+          FULL: ${{ steps.create.outputs.full }}
+          RESIZED: ${{ steps.create.outputs.resized }}
         run: |
-          if [ -z "$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search 'in:title "Oracle server is ready"' --json number --jq '.[0].number')" ]; then
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search 'in:title "Oracle server is ready"' --json number --jq '.[0].number')
+          if [ -n "$ISSUE" ] && [ "$RESIZED" = 1 ]; then
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "The server was resized to $SIZE (it rebooted once). Retries are now switched off."
+          fi
+          if [ -z "$ISSUE" ]; then
             gh issue create --repo "$GITHUB_REPOSITORY" --assignee "$GITHUB_REPOSITORY_OWNER" \
               --title "Oracle server is ready: $IP" \
               --body "The free Oracle server was created by [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
 
           - IP: \`$IP\`
+          - Size: $SIZE$( [ "$FULL" = true ] || echo " (smaller than asked; this workflow keeps trying to resize it to 2 OCPU / 12 GB, which reboots the server once, about 45 minutes after it was created)")
           - Site: https://$IP.sslip.io (first-boot setup takes about 15 to 25 minutes after this)
           - SSH from Oracle Cloud Shell: \`ssh -i ~/.ssh/docchat ubuntu@$IP\`
           - Setup log: \`sudo tail -f /var/log/docchat-setup.log\`
 
-          This workflow has switched its schedule off. Next: add the AI keys to ~/docchat/.env, the DEPLOY_HOST and DEPLOY_SSH_KEY secrets for automatic deploys (deploy.md section 8), and delete the GitHub API key in Oracle (Profile > API keys)."
+          Next: add the AI keys to ~/docchat/.env, the DEPLOY_HOST and DEPLOY_SSH_KEY secrets for automatic deploys (deploy.md section 8), and delete the GitHub API key in Oracle (Profile > API keys)."
           fi
-          gh workflow disable oracle-create-server.yml --repo "$GITHUB_REPOSITORY"
+          if [ "$FULL" = true ]; then
+            gh workflow disable oracle-create-server.yml --repo "$GITHUB_REPOSITORY"
+          fi
 
       - name: Start the next round
-        if: steps.check.outputs.ready == 'true' && steps.create.outputs.ready != 'true'
+        if: steps.check.outputs.ready == 'true' && steps.create.outputs.full != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run oracle-create-server.yml --repo "$GITHUB_REPOSITORY" --ref main
