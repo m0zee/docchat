@@ -4,8 +4,8 @@ name: oracle-create-server
 # "Out of host capacity", without a laptop or Cloud Shell open.
 # GitHub runs schedules at most every 5 minutes (often later); each run tries
 # about once a minute for 4 minutes, so attempts are roughly continuous.
-# Once the server exists, each run just prints it and stops; disable this
-# workflow then (Actions > oracle-create-server > ... > Disable workflow).
+# When the server exists, it opens an issue titled "Oracle server is ready"
+# (GitHub emails the repo owner about it) and switches its own schedule off.
 #
 # Setup: one repository secret, ORACLE_SETTINGS (Settings > Secrets and
 # variables > Actions). Make its text in Oracle Cloud Shell with
@@ -21,6 +21,9 @@ on:
 
 permissions:
   contents: read
+  # To open the "server is ready" issue and switch this workflow off.
+  issues: write
+  actions: write
 
 concurrency:
   group: oracle-create-server
@@ -72,12 +75,35 @@ jobs:
           oci iam region-subscription list --query 'data[]."region-name"' --raw-output
 
       - name: Create the server (or report it)
+        id: create
         if: steps.check.outputs.ready == 'true'
         run: |
           set +e
           bash deploy/oracle/create-server.sh
           status=$?
-          if [ "$status" -ne 0 ]; then
+          if [ "$status" -ne 0 ] || [ ! -f "$HOME/docchat-oci/server.txt" ]; then
             echo "No capacity this round; the next scheduled run tries again."
+            exit 0
           fi
-          exit 0
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "ip=$(sed -n 's/^ip=//p' "$HOME/docchat-oci/server.txt")" >> "$GITHUB_OUTPUT"
+
+      - name: Tell the owner and stop retrying
+        if: steps.create.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IP: ${{ steps.create.outputs.ip }}
+        run: |
+          if [ -z "$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search 'in:title "Oracle server is ready"' --json number --jq '.[0].number')" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --assignee "$GITHUB_REPOSITORY_OWNER" \
+              --title "Oracle server is ready: $IP" \
+              --body "The free Oracle server was created by [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
+
+          - IP: \`$IP\`
+          - Site: https://$IP.sslip.io (first-boot setup takes about 15 to 25 minutes after this)
+          - SSH from Oracle Cloud Shell: \`ssh -i ~/.ssh/docchat ubuntu@$IP\`
+          - Setup log: \`sudo tail -f /var/log/docchat-setup.log\`
+
+          This workflow has switched its schedule off. Next: add the AI keys to ~/docchat/.env, the DEPLOY_HOST and DEPLOY_SSH_KEY secrets for automatic deploys (deploy.md section 8), and delete the GitHub API key in Oracle (Profile > API keys)."
+          fi
+          gh workflow disable oracle-create-server.yml --repo "$GITHUB_REPOSITORY"
