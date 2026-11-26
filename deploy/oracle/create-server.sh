@@ -11,6 +11,9 @@ set -euo pipefail
 NAME="${DOCCHAT_NAME:-docchat}"
 OCPUS="${DOCCHAT_OCPUS:-2}"
 MEMORY_GB="${DOCCHAT_MEMORY_GB:-12}"
+# Smaller sizes to try in turn when the full size has no capacity
+# ("OCPUS:GB" pairs). A smaller server can be resized up later.
+FALLBACK_SIZES="${DOCCHAT_FALLBACK_SIZES:-1:6}"
 CLOUD_INIT_URL="${DOCCHAT_CLOUD_INIT_URL:-https://raw.githubusercontent.com/m0zee/docchat/main/deploy/oracle/cloud-init.sh}"
 WORK="$HOME/docchat-oci"
 mkdir -p "$WORK"
@@ -92,16 +95,20 @@ if [ -z "$INST" ] || [ "$INST" = "null" ]; then
   INST=""
   while [ -z "$INST" ]; do
   ATTEMPT=$((ATTEMPT + 1))
+  # Alternate between the full size and the fallback sizes on each attempt.
+  set -- "$OCPUS:$MEMORY_GB" $FALLBACK_SIZES
+  SIZE=$(eval "echo \${$(( (ATTEMPT - 1) % $# + 1 ))}")
+  A_OCPUS=${SIZE%%:*}; A_MEM=${SIZE##*:}
   for AD in $ADS; do
     if INST=$(oci compute instance launch -c "$C" --availability-domain "$AD" --display-name "$NAME" \
-        --shape VM.Standard.A1.Flex --shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEMORY_GB}" \
+        --shape VM.Standard.A1.Flex --shape-config "{\"ocpus\":$A_OCPUS,\"memoryInGBs\":$A_MEM}" \
         --image-id "$IMAGE" --subnet-id "$SUBNET" --assign-public-ip true \
         --ssh-authorized-keys-file "$HOME/.ssh/docchat.pub" --user-data-file "$WORK/cloud-init.sh" \
         --wait-for-state RUNNING --query 'data.id' --raw-output 2> "$WORK/launch-error.txt"); then
       break
     fi
     INST=""
-    echo "  attempt $ATTEMPT: $(grep -o '"message": "[^"]*"' "$WORK/launch-error.txt" || head -c 300 "$WORK/launch-error.txt")"
+    echo "  attempt $ATTEMPT ($A_OCPUS OCPU, $A_MEM GB): $(grep -o '"message": "[^"]*"' "$WORK/launch-error.txt" || head -c 300 "$WORK/launch-error.txt")"
   done
   if [ -z "$INST" ]; then
     if [ "$(date +%s)" -ge "$DEADLINE" ]; then
