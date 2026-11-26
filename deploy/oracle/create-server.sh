@@ -78,8 +78,9 @@ if [ -z "$SUBNET" ] || [ "$SUBNET" = "null" ]; then
     --security-list-ids "[\"$SL\"]" --wait-for-state AVAILABLE --query 'data.id' --raw-output)
 fi
 
-# Existing server? Print it and stop.
-INST=$(q compute instance list -c "$C" --display-name "$NAME" --lifecycle-state RUNNING --query 'data[0].id' --raw-output)
+# Existing server (in any state but terminated, e.g. rebooting after a resize)? Reuse it.
+INST=$(q compute instance list -c "$C" --display-name "$NAME" \
+  --query 'data[?"lifecycle-state"!=`TERMINATED` && "lifecycle-state"!=`TERMINATING`] | [0].id' --raw-output)
 if [ -z "$INST" ] || [ "$INST" = "null" ]; then
   IMAGE=$(oci compute image list -c "$C" --operating-system "Canonical Ubuntu" --operating-system-version "24.04" \
     --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order DESC \
@@ -120,10 +121,43 @@ if [ -z "$INST" ] || [ "$INST" = "null" ]; then
   done
 fi
 
+# Got a smaller server than asked for? With DOCCHAT_RESIZE=1, keep trying to
+# resize it up in place. A resize reboots the server, so it waits until the
+# server is DOCCHAT_RESIZE_AFTER_MINUTES old (first-boot setup has finished).
+cur() { oci compute instance get --instance-id "$INST" --query "data.\"shape-config\".$1" --raw-output | cut -d. -f1; }
+CUR_OCPUS=$(cur ocpus)
+RESIZED=0
+if [ "${DOCCHAT_RESIZE:-0}" = 1 ] && [ "$CUR_OCPUS" -lt "$OCPUS" ]; then
+  CREATED=$(oci compute instance get --instance-id "$INST" --query 'data."time-created"' --raw-output)
+  RESIZE_DEADLINE=$(( $(date +%s) + ${DOCCHAT_RETRY_MINUTES:-30} * 60 ))
+  echo "Server has $CUR_OCPUS OCPU; trying to resize it to $OCPUS OCPU / $MEMORY_GB GB."
+  while :; do
+    AGE_MIN=$(( ($(date +%s) - $(date -d "$CREATED" +%s)) / 60 ))
+    if [ "$AGE_MIN" -lt "${DOCCHAT_RESIZE_AFTER_MINUTES:-45}" ]; then
+      echo "  waiting for first-boot setup to finish (server is $AGE_MIN minutes old)"
+    elif oci compute instance update --instance-id "$INST" --force \
+        --shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEMORY_GB}" \
+        --wait-for-state RUNNING >/dev/null 2> "$WORK/resize-error.txt"; then
+      RESIZED=1
+      echo "== Resized to $OCPUS OCPU / $MEMORY_GB GB"
+      break
+    else
+      echo "  resize: $(grep -o '"message": "[^"]*"' "$WORK/resize-error.txt" || head -c 300 "$WORK/resize-error.txt")"
+    fi
+    [ "$(date +%s)" -ge "$RESIZE_DEADLINE" ] && break
+    sleep "${DOCCHAT_RETRY_SECONDS:-60}"
+  done
+  CUR_OCPUS=$(cur ocpus)
+fi
+CUR_MEM=$(cur '"memory-in-gbs"')
+
 IP=$(oci compute instance list-vnics --instance-id "$INST" --query 'data[0]."public-ip"' --raw-output)
 cat > "$WORK/server.txt" <<EOF
 instance=$INST
 ip=$IP
+ocpus=$CUR_OCPUS
+memory_gb=$CUR_MEM
+resized=$RESIZED
 url=https://$IP.sslip.io
 ssh=ssh -i ~/.ssh/docchat ubuntu@$IP
 EOF
