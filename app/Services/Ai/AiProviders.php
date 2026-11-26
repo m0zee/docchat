@@ -60,7 +60,7 @@ class AiProviders
 
     public function chat(Workspace $workspace): ResolvedChat
     {
-        $choice = $this->chatChoice($workspace);
+        $choice = $this->chatChoice($workspace) ?? $this->fallbackChoice($workspace);
         $key = $choice === null ? null : $this->key($workspace, $choice);
 
         if ($choice === null || $key === null) {
@@ -75,6 +75,31 @@ class AiProviders
         };
 
         return new ResolvedChat($provider, AiSource::Workspace, $key);
+    }
+
+    /**
+     * A workspace left on "the app's keys" when the app has no chat key of its
+     * own (a self-hosted install with only workspace keys) would always fail
+     * with "Set GROQ_API_KEY in .env.", so it uses its own saved key instead:
+     * the app's driver first, then Groq, then Gemini.
+     */
+    private function fallbackChoice(Workspace $workspace): ?AiProvider
+    {
+        $driver = (string) config('docchat.chat.driver');
+
+        if (trim((string) config('docchat.chat.drivers.'.$driver.'.api_key')) !== '') {
+            return null;
+        }
+
+        $order = array_unique(array_filter([AiProvider::tryFrom($driver), AiProvider::Groq, AiProvider::Gemini]), SORT_REGULAR);
+
+        foreach ($order as $provider) {
+            if ($this->key($workspace, $provider) !== null) {
+                return $provider;
+            }
+        }
+
+        return null;
     }
 
     /**

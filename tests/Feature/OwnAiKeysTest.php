@@ -90,6 +90,32 @@ it('uses the app provider when the workspace has no own key or did not choose it
         ->and($resolved->source)->toBe(AiSource::Platform);
 });
 
+it('falls back to the workspace key when the app has no chat key of its own', function () {
+    config(['docchat.chat.driver' => 'groq', 'docchat.chat.drivers.groq.api_key' => '']);
+    ownKey($this, AiProvider::Gemini, 'gemini_workspace_key_1234567890');
+    $key = ownKey($this, AiProvider::Groq, 'gsk_workspace_key_1234567890');
+
+    $resolved = app(AiProviders::class)->chat($this->workspace);
+
+    expect($resolved->provider)->toBeInstanceOf(GroqChatProvider::class)
+        ->and($resolved->source)->toBe(AiSource::Workspace)
+        ->and($resolved->key->id)->toBe($key->id);
+});
+
+it('falls back to a workspace gemini key when that is the only one', function () {
+    config(['docchat.chat.driver' => 'groq', 'docchat.chat.drivers.groq.api_key' => '']);
+    ownKey($this, AiProvider::Gemini, 'gemini_workspace_key_1234567890');
+
+    expect(app(AiProviders::class)->chat($this->workspace)->provider)->toBeInstanceOf(GeminiChatProvider::class);
+});
+
+it('stays on the app key when the app has one, even with workspace keys saved', function () {
+    $this->app->instance(ChatProvider::class, $fake = new FakeChatProvider);
+    ownKey($this, AiProvider::Groq, 'gsk_workspace_key_1234567890');
+
+    expect(app(AiProviders::class)->chat($this->workspace)->provider)->toBe($fake);
+});
+
 it('answers with the workspace groq key and model and records the source', function () {
     $this->app->instance(EmbeddingProvider::class, new FakeEmbeddingProvider);
     $key = ownKey($this, AiProvider::Groq, 'gsk_workspace_key_1234567890', 'llama-own-model');
