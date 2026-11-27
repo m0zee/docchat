@@ -54,6 +54,19 @@ it('includes exactly the last four history messages in order and cuts long ones'
         ->and($messages[5])->toBe(['role' => 'user', 'content' => 'New?']);
 });
 
+it('leaves refused questions and their refusals out of the history', function () {
+    $history = [
+        historyMessage(MessageRole::User, 'What is the text of 2026?'),
+        historyMessage(MessageRole::Assistant, "I don't know based on your documents."),
+        historyMessage(MessageRole::User, 'Freelancer tax 2026?'),
+        historyMessage(MessageRole::Assistant, 'It is 15% [1].'),
+    ];
+
+    $messages = (new PromptBuilder)->build('And exporters?', [], $history);
+
+    expect(array_column(array_slice($messages, 1), 'content'))->toBe(['Freelancer tax 2026?', 'It is 15% [1].', 'And exporters?']);
+});
+
 it('states the grounding, citation, refusal and injection rules', function () {
     $system = (new PromptBuilder)->build('Q', [])[0]['content'];
 

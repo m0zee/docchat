@@ -31,6 +31,11 @@ class AnswerService
     public const BUSY = 'The model is busy, try again in a minute.';
 
     /**
+     * Earlier questions from the asker added to a follow-up's search text.
+     */
+    private const SEARCH_HISTORY_QUESTIONS = 2;
+
+    /**
      * Chunks retrieved for the last answer, for evals and logging.
      *
      * @var list<RetrievedChunk>
@@ -250,7 +255,7 @@ class AnswerService
         }
 
         try {
-            $vector = $this->providers->embeddings($workspace)->embedQuery($question);
+            $vector = $this->providers->embeddings($workspace)->embedQuery(self::searchText($question, $history));
 
             if ($cacheable && ($hit = $this->cache->findSimilar($workspace, $vector, $documentIds)) !== null) {
                 return $this->answerFromCache($conversation, $hit, $started, $onDelta, UsageRecorder::estimateTokens($question));
@@ -289,6 +294,36 @@ class AnswerService
             'cacheable' => $cacheable,
             'vector' => $vector,
         ];
+    }
+
+    /**
+     * What the document search embeds. A follow-up such as "what about who is
+     * not registered?" names no topic, so searching for it alone finds the
+     * wrong passages and the model then says it doesn't know. The asker's
+     * previous questions are put in front of it, which costs no model call.
+     * The model still gets the question as asked, with the history.
+     *
+     * @param  Collection<int, Message>  $history
+     */
+    public static function searchText(string $question, Collection $history): string
+    {
+        $messages = $history->values();
+
+        // A question that found nothing (often misheard on a call) would only
+        // pull the search off course, so it is left out.
+        $previous = $messages
+            ->filter(function (Message $message, int $index) use ($messages): bool {
+                $reply = $messages->get($index + 1);
+
+                return $message->role === MessageRole::User && trim($message->content) !== ''
+                    && ! ($reply instanceof Message && $reply->role === MessageRole::Assistant
+                        && ($reply->content === self::NOT_FOUND || EvalRunner::isRefusal($reply->content)));
+            })
+            ->take(-self::SEARCH_HISTORY_QUESTIONS)
+            ->map(fn (Message $message): string => trim($message->content))
+            ->all();
+
+        return $previous === [] ? $question : implode("\n", [...$previous, $question]);
     }
 
     /**

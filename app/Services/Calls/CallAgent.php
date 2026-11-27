@@ -190,7 +190,7 @@ class CallAgent
             // An agenda call: answer from the documents when they cover what
             // was said, otherwise just acknowledge it. Then ask the next point.
             $next = $call->agenda_step < count($agenda) ? $agenda[$call->agenda_step] : Phrases::get($language, 'anything_else');
-            $text = ($refused ? Phrases::get($language, 'agenda_ack', [], $call->turns - 1) : SpokenText::from($message->content, $max)).' '.$next;
+            $text = ($refused ? Phrases::get($language, 'agenda_ack', [], $call->turns - 1) : SpokenText::from($message->content, $max, $language)).' '.$next;
             $call->forceFill(['agenda_step' => $call->agenda_step + 1])->save();
 
             // Keep the transcript to what was said, so summaries see the agenda.
@@ -203,7 +203,7 @@ class CallAgent
             $handoff = trim((string) CallSettings::for($call->workspace)['handoff']);
             $text = Phrases::get($language, 'not_found').($handoff !== '' ? ' '.$handoff : '').' '.Phrases::get($language, 'anything_else');
         } else {
-            $text = SpokenText::from($message->content, $max);
+            $text = SpokenText::from($message->content, $max, $language);
         }
 
         if ($call->turns >= max(1, (int) config('docchat.calls.max_turns')) || $call->isOverTime()) {

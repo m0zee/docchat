@@ -100,7 +100,7 @@ test('speech is transcribed and answered from the documents, ready to read aloud
     $response = callTurn($data['token'], ['audio' => UploadedFile::fake()->createWithContent('speech.webm', str_repeat('a', 2048))])
         ->assertOk()
         ->assertJsonPath('data.heard', 'When do you open?')
-        ->assertJsonPath('data.reply', 'We open at 9.')
+        ->assertJsonPath('data.reply', 'We open at nine.')
         ->assertJsonPath('data.ended', false)
         ->assertJsonPath('data.citations.0.title', 'Hours')
         ->assertJsonPath('data.citations.0.page', 2);
@@ -116,10 +116,21 @@ test('speech is transcribed and answered from the documents, ready to read aloud
         ->and($call->turns)->toBe(1);
 });
 
+test('speech recognition is told the workspace vocabulary: the greeting and document titles', function () {
+    Document::factory()->ready()->for($this->owner)->create(['title' => '202681113864992WithholdingTaxRatesCard2027']);
+    Document::factory()->for($this->owner)->create(['title' => 'Still processing', 'status' => 'processing']);
+    $this->workspace->update(['settings' => ['calls' => ['greeting' => 'How can I help you with tax filing for 2026?']]]);
+    $data = startWidgetCall();
+
+    callTurn($data['token'], ['audio' => UploadedFile::fake()->createWithContent('speech.webm', str_repeat('a', 2048))])->assertOk();
+
+    expect($this->stt->calls[0]['prompt'])->toBe('How can I help you with tax filing for 2026?. Withholding Tax Rates Card 2027, Hours');
+});
+
 test('typed text works without speech recognition', function () {
     $data = startWidgetCall();
 
-    callTurn($data['token'], ['text' => 'When do you open?'])->assertOk()->assertJsonPath('data.reply', 'We open at 9.');
+    callTurn($data['token'], ['text' => 'When do you open?'])->assertOk()->assertJsonPath('data.reply', 'We open at nine.');
 
     expect($this->stt->calls)->toBe([]);
 });
@@ -197,7 +208,7 @@ test('the turn limit ends the call', function () {
 
     callTurn($data['token'], ['text' => 'When do you open?'])
         ->assertJsonPath('data.ended', true)
-        ->assertJsonPath('data.reply', 'We open at 9. '.CallAgent::TIME_UP);
+        ->assertJsonPath('data.reply', 'We open at nine. '.CallAgent::TIME_UP);
 });
 
 test('hanging up ends the call and its token', function () {

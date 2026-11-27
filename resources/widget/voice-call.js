@@ -328,7 +328,7 @@
       try {
         synth.cancel();
         var voice = browserVoice();
-        var parts = text.match(/[^.!?\u0964\u06D4\u061F]+[.!?\u0964\u06D4\u061F]*\s*/g) || [text];
+        var parts = sentences(text);
         parts.forEach(function (part, i) {
           var u = new SpeechSynthesisUtterance(part.trim());
           if (voice) u.voice = voice;
@@ -342,11 +342,17 @@
       return function () { clearTimeout(timer); try { synth.cancel(); } catch (e) { /* ignore */ } };
     }
 
+    // Split at punctuation + space, so "2.5" stays whole.
+    function sentences(text) {
+      var parts = String(text).split(/(?<=[.!?\u0964\u06D4\u061F])\s+/).filter(function (p) { return p.trim() !== ''; });
+      return parts.length ? parts : [text];
+    }
+
     // Kokoro: fetch each sentence as audio and play them in order. The next
     // sentence is fetched while the current one plays. Falls back to the
     // browser voice for whatever is left if anything fails.
     function speakKokoro(text, done) {
-      var parts = text.match(/[^.!?\u0964\u06D4\u061F]+[.!?\u0964\u06D4\u061F]*\s*/g) || [text];
+      var parts = sentences(text);
       parts = parts.map(function (p) { return p.trim(); }).filter(Boolean);
       var stopped = false;
       var audio = null;

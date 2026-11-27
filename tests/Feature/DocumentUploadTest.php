@@ -20,7 +20,7 @@ it('accepts a supported file, stores it privately and queues ingestion', functio
     Livewire::actingAs($user)
         ->test('pages::documents.index')
         ->set('file', $file)
-        ->call('upload')
+        ->call('save')
         ->assertHasNoErrors();
 
     $document = Document::first();
@@ -53,7 +53,7 @@ it('rejects an unsupported extension', function () {
     Livewire::actingAs($user)
         ->test('pages::documents.index')
         ->set('file', $file)
-        ->call('upload')
+        ->call('save')
         ->assertHasErrors(['file']);
 
     expect(Document::count())->toBe(0);
@@ -67,7 +67,7 @@ it('rejects a file whose content does not match its extension', function () {
     Livewire::actingAs($user)
         ->test('pages::documents.index')
         ->set('file', $file)
-        ->call('upload')
+        ->call('save')
         ->assertHasErrors(['file']);
 
     expect(Document::count())->toBe(0);
@@ -80,7 +80,7 @@ it('rejects a file over 10 MB', function () {
     Livewire::actingAs($user)
         ->test('pages::documents.index')
         ->set('file', $file)
-        ->call('upload')
+        ->call('save')
         ->assertHasErrors(['file']);
 
     expect(Document::count())->toBe(0);
@@ -93,7 +93,7 @@ it('accepts a 9 MB PDF', function () {
     Livewire::actingAs($user)
         ->test('pages::documents.index')
         ->set('file', $file)
-        ->call('upload')
+        ->call('save')
         ->assertHasNoErrors();
 
     expect(Document::first()->size_bytes)->toBe(9 * 1024 * 1024);

@@ -3,6 +3,7 @@
 namespace App\Services\Rag;
 
 use App\Enums\MessageRole;
+use App\Evals\EvalRunner;
 use App\Models\Message;
 use Illuminate\Support\Str;
 
@@ -83,9 +84,22 @@ class PromptBuilder
 
         foreach ($history as $message) {
             // Failed replies with no text add nothing for follow-ups.
-            if (trim($message->content) !== '') {
-                $messages[] = $message;
+            if (trim($message->content) === '') {
+                continue;
             }
+
+            // Neither does a refusal: a run of "I don't know" replies nudges
+            // the model into refusing the next question too. Its question goes.
+            if ($message->role === MessageRole::Assistant
+                && ($message->content === AnswerService::NOT_FOUND || EvalRunner::isRefusal($message->content))) {
+                if ($messages !== [] && end($messages)->role === MessageRole::User) {
+                    array_pop($messages);
+                }
+
+                continue;
+            }
+
+            $messages[] = $message;
         }
 
         return $limit === 0 ? [] : array_slice($messages, -$limit);

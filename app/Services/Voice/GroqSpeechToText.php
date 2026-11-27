@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Http;
  */
 class GroqSpeechToText implements SpeechToText
 {
-    public function transcribe(string $audio, string $filename, ?string $language = null): Transcript
+    public function transcribe(string $audio, string $filename, ?string $language = null, ?string $prompt = null): Transcript
     {
         $config = (array) config('docchat.voice.stt');
         $apiKey = trim((string) ($config['api_key'] ?? ''));
@@ -32,6 +32,12 @@ class GroqSpeechToText implements SpeechToText
 
         if (is_string($language) && $language !== '') {
             $fields['language'] = $language;
+        }
+
+        // Whisper reads the prompt as text that came before; it steers spelling
+        // and vocabulary ("tax", not "text") and only the last 224 tokens count.
+        if (is_string($prompt) && trim($prompt) !== '') {
+            $fields['prompt'] = trim($prompt);
         }
 
         try {

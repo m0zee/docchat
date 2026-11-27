@@ -121,7 +121,7 @@ test('speech results are answered from the documents', function () {
     $this->artisan('queue:work', ['--once' => true, '--stop-when-empty' => true]);
 
     $xml = simplexml_load_string(twilioPost($path, ['CallSid' => 'CA1'])->getContent());
-    expect((string) $xml->Gather->Say)->toBe('Open 9 to 5.');
+    expect((string) $xml->Gather->Say)->toBe('Open nine to five.');
 
     $response = twilioPost('twilio/voice/calls/'.$call->id.'/gather', ['CallSid' => 'CA1', 'SpeechResult' => 'Goodbye'])->assertOk();
     expect($response->getContent())->toContain('Thanks for calling. Bye for now!')->toContain('<Hangup/>');

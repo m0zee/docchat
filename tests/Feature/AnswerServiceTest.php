@@ -7,6 +7,7 @@ use App\Exceptions\ChatRateLimitedException;
 use App\Models\Chunk;
 use App\Models\Conversation;
 use App\Models\Document;
+use App\Models\Message;
 use App\Models\User;
 use App\Services\Rag\AnswerService;
 use Illuminate\Support\Facades\Http;
@@ -98,6 +99,45 @@ it('sends the last history messages with a follow-up question', function () {
     expect(array_column($sent, 'role'))->toBe(['system', 'user', 'assistant', 'user'])
         ->and($sent[1]['content'])->toBe('First question?')
         ->and(end($sent)['content'])->toBe('And the second one?');
+});
+
+it('searches for a follow-up together with the earlier questions, but asks the model the question as typed', function () {
+    addChunk($this->document, 0.9);
+    $embeddings = new FakeEmbeddingProvider;
+    $this->app->instance(EmbeddingProvider::class, $embeddings);
+    $chat = useChat(new FakeChatProvider);
+
+    $service = app(AnswerService::class);
+    $service->answer($this->conversation, 'What tax does a freelancer pay?');
+    $service->answer($this->conversation, 'And a software exporter?');
+    $service->answer($this->conversation, 'What about who is not registered?');
+
+    expect($embeddings->queries)->toBe([
+        'What tax does a freelancer pay?',
+        "What tax does a freelancer pay?\nAnd a software exporter?",
+        "What tax does a freelancer pay?\nAnd a software exporter?\nWhat about who is not registered?",
+    ])->and(end($chat->calls[2])['content'])->toBe('What about who is not registered?');
+});
+
+it('keeps only the last two earlier questions in the search text', function () {
+    $history = collect(['One?', 'Answer', 'Two?', 'Answer', 'Three?', 'Answer'])->map(fn (string $content, int $i) => new Message([
+        'role' => $i % 2 === 0 ? MessageRole::User : MessageRole::Assistant,
+        'content' => $content,
+    ]));
+
+    expect(AnswerService::searchText('Four?', $history))->toBe("Two?\nThree?\nFour?")
+        ->and(AnswerService::searchText('Only?', collect()))->toBe('Only?');
+});
+
+it('leaves questions that found nothing out of the search text', function () {
+    $history = collect([
+        [MessageRole::User, 'Freelancer tax 2026?'],
+        [MessageRole::Assistant, 'It is 15% [1].'],
+        [MessageRole::User, 'What about the attacks?'],
+        [MessageRole::Assistant, "I don't know based on your documents."],
+    ])->map(fn (array $m) => new Message(['role' => $m[0], 'content' => $m[1]]));
+
+    expect(AnswerService::searchText('And exporters?', $history))->toBe("Freelancer tax 2026?\nAnd exporters?");
 });
 
 it('keeps the partial answer and a busy error when the model is rate limited mid-stream', function () {

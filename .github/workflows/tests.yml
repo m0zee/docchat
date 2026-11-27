@@ -61,6 +61,74 @@ jobs:
       - name: Run CI Checks
         run: composer ci:check
 
+  # Drives the real app in Chromium, so a break between Blade/Livewire and the
+  # browser (which Pest can't see) fails CI.
+  app-browser:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_DB: docchat
+          POSTGRES_USER: docchat
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U docchat -d docchat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: docchat
+      DB_USERNAME: docchat
+      DB_PASSWORD: secret
+      APP_URL: http://127.0.0.1:8000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, pgsql
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Setup Application
+        run: composer setup
+
+      # The demo user and sample document; no worker runs, so nothing calls an AI API.
+      - name: Seed the demo user
+        run: php artisan db:seed --class=SampleDocumentSeeder --force
+
+      - name: Install Playwright and Chromium
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Upload a document in a browser
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8000 > serve.log 2>&1 &
+          timeout 30 sh -c 'until curl -sf http://127.0.0.1:8000/login > /dev/null; do sleep 1; done'
+          BASE_URL=http://127.0.0.1:8000 NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/document-upload.cjs || { cat serve.log; tail -n 50 storage/logs/laravel.log; exit 1; }
+
   production-image:
     runs-on: ubuntu-latest
 

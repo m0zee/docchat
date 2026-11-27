@@ -23,7 +23,7 @@ new #[Title('Documents')] class extends Component {
 
     public ?TemporaryUploadedFile $file = null;
 
-    public function upload(DocumentService $service): void
+    public function save(DocumentService $service): void
     {
         $this->validate([
             'file' => [
@@ -104,7 +104,7 @@ new #[Title('Documents')] class extends Component {
     </div>
 
     <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-        <form wire:submit="upload" class="space-y-4">
+        <form wire:submit="save" class="space-y-4">
             <div>
                 <label
                     x-data="{ over: false }"
@@ -143,7 +143,7 @@ new #[Title('Documents')] class extends Component {
                     type="submit"
                     variant="primary"
                     wire:loading.attr="disabled"
-                    wire:target="file,upload"
+                    wire:target="file,save"
                 >
                     {{ __('Upload') }}
                 </flux:button>
