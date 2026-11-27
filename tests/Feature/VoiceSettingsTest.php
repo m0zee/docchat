@@ -258,7 +258,7 @@ test('a browser call gets its voice settings, and answers are worded for speakin
         ->and($data['voice']['pitch'])->toBe(1.17)
         ->and($data['voice']['fillers'])->toContain('One moment.');
 
-    voiceTurn($data['token'], ['text' => 'When do you open?'])->assertOk()->assertJsonPath('data.reply', 'We open at 9.');
+    voiceTurn($data['token'], ['text' => 'When do you open?'])->assertOk()->assertJsonPath('data.reply', 'We open at nine.');
 
     $system = $this->chat->calls[0][0]['content'];
     expect($system)->toContain('spoken aloud on a voice call')->toContain('You are Ava, a virtual assistant')

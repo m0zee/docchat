@@ -435,7 +435,9 @@ final class VoiceProfile
 
         return 'This answer is spoken aloud on a voice call. You are '.$profile['assistant_name']
             .', a virtual assistant. '.$personality.' Use one to three short, natural spoken sentences'
-            .' with everyday words and contractions. No lists, headings, links or symbols. Still cite'
+            .' with everyday words and contractions. No lists, headings, links or symbols. Say amounts'
+            .' the way people say them aloud, with the currency the documents use as a word (for example'
+            .' "twelve lakh rupees"), never ₹, Rs or %. Still cite'
             .' facts with [1] style markers; they are removed before speaking. '.$language;
     }
 

@@ -118,7 +118,7 @@ test('voice replies are spoken by Groq in pieces and turned into MP3', function 
 });
 
 test('Groq Whisper is called with the file and the model', function () {
-    config(['docchat.voice.stt.api_key' => 'gsk_test']);
+    config(['docchat.voice.stt.api_key' => 'gsk_test', 'docchat.voice.stt.model' => 'whisper-large-v3-turbo']);
     Http::fake(['api.groq.com/openai/v1/audio/transcriptions' => Http::response(['text' => ' Hello there ', 'duration' => 1.5, 'language' => 'english'])]);
 
     $transcript = app(GroqSpeechToText::class)->transcribe('bytes', 'speech.webm', 'en');
