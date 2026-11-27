@@ -28,7 +28,7 @@ final class NumberWords
         return preg_replace_callback(
             '/(\+)?(?<![\w.])(\d+)(?:\.(\d+))?(?![\w])(?=(\s+(?:lakh|lac|crore|thousand|million|billion))?(\s+rupees)?)/u',
             function (array $m): string {
-                [$all, $plus, $whole] = [$m[0], $m[1] ?? '', $m[2]];
+                [$plus, $whole] = [$m[1], $m[2]];
                 $fraction = $m[3] ?? '';
                 $rupees = ($m[5] ?? '') !== '' && ($m[4] ?? '') === '';
 
@@ -112,7 +112,7 @@ final class NumberWords
 
         $low = $year % 100;
 
-        return self::belowThousand(intdiv($year, 100)).' '.($low === 0 ? 'hundred' : ($low < 10 ? 'oh '.self::ONES[$low] : self::belowThousand($low)));
+        return self::belowThousand(intdiv($year, 100)).' '.($low === 0 ? 'hundred' : ($low < 10 ? 'oh '.self::digits((string) $low) : self::belowThousand($low)));
     }
 
     public static function digits(string $digits): string
